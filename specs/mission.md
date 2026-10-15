@@ -1,6 +1,6 @@
 # Mission
 
-> Status: **v1.0** — constitution approved 2026-10-15. Project name: **teachable-eye**.
+> Status: **v1.1** — constitution approved 2026-10-15; working notes added the same day (end of file). Project name: **teachable-eye**.
 
 ## Problem
 
@@ -102,3 +102,24 @@ Detection and tracking (YOLO, motion, tracker) are the "eyes" and are **not** Qd
   - `unsecured → secured` errors = **0**
   - glide-path accuracy and the `uncertain` rate are reported per class
   - labels are cross-checked against GPX
+
+## Working notes (2026-10-15, after the first phone tests)
+
+What the phone tests taught us about the mission itself (details: `roadmap.md` status log,
+`specs/features/01-memory-core-objects-people/feature-plan.md`):
+
+- **The human stays in control of *what* is taught.** Users choose any box, cycle through
+  overlapping ones, pause and fix a box by its corners, or draw their own; live view then follows
+  exactly that box. The detector proposes, the user decides — the same assist-not-replace stance as
+  the approach check.
+- **Explainable includes the memory itself.** Augmented variants are stored to generalise (closer,
+  mirrored, darker), but they are shown under their view and can be deleted; the evidence card says
+  when the nearest match was a variant. Nothing the system "remembers" is hidden from the user.
+- **Forgetting is complete.** Forgetting a label, a view or everyone removes vectors *and* the
+  thumbnail files (principle 5).
+- **Calibrate before trusting.** Thresholds came from another camera; on the phone some unrelated
+  objects score close to the bar (correctly `uncertain`). Measured calibration (evaluation tool) comes
+  before more features and before any aircraft claim (principle 6).
+- **Some targets are not "objects".** Small debris on a surface was not detected as an object; that
+  points to anomaly detection on a learned "clean surface" — a candidate second demo for aviation
+  (FOD on runway/apron), kept in the roadmap backlog, not in scope yet.
