@@ -1,0 +1,91 @@
+# ------------------------------------------------------------------
+# Principle 4 (mission.md): NO training media in any repository.
+# Images, video, audio, face data, embeddings and datasets never go
+# into git. Keep them under data/ (ignored) or outside the repo.
+# ------------------------------------------------------------------
+
+# Datasets, memories and runtime state
+data/
+edge-data*/
+*_shard/
+snapshots/
+*.snapshot
+recordings/
+captures/
+
+# Images
+*.jpg
+*.jpeg
+*.png
+*.gif
+*.webp
+*.bmp
+*.tif
+*.tiff
+*.heic
+*.heif
+*.raw
+*.dng
+
+# Video
+*.mp4
+*.mov
+*.avi
+*.mkv
+*.webm
+*.m4v
+*.3gp
+*.h264
+*.h265
+*.ts
+
+# Audio
+*.wav
+*.mp3
+*.m4a
+*.ogg
+*.flac
+*.aac
+*.opus
+
+# Flight tracks (used only offline for label verification)
+*.gpx
+*.kml
+*.igc
+
+# Vectors / tensors / model weights
+*.npy
+*.npz
+*.pt
+*.pth
+*.onnx
+*.safetensors
+*.bin
+*.parquet
+*.h5
+
+# Secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+cert/
+
+# Python / tooling
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.ipynb_checkpoints/
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Docs may later need small diagrams: add them explicitly with an
+# exception rule (e.g. !docs/diagrams/*.svg) after review — never photos.
