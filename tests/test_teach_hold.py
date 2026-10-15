@@ -195,3 +195,31 @@ def test_variants_have_own_thumbs_and_go_with_their_view(task):
     assert task.gc_thumbs() >= 3
     assert task.memory.count() == 0
     assert not any(task.thumbs.glob("*.jpg"))
+
+
+def test_gc_keeps_pictures_another_encoders_memory_uses(tmp_path, monkeypatch):
+    """Switching encoders keeps one memory per encoder; they share thumbnails.
+    Forgetting in one must not delete files the other still refers to."""
+    monkeypatch.setattr(config, "DATA_DIR", tmp_path)
+    from teachable_eye.tasks import object_memory_dir
+    monkeypatch.setattr(config, "OBJECT_ENCODER", "dinov2-large")
+    other = TaskMemory(object_memory_dir("clip-b32"), 4, "objects",
+                       config.TaskThresholds(0.9, 0.05))
+    mem = TaskMemory(object_memory_dir("dinov2-large"), 4, "objects",
+                     config.TaskThresholds(0.9, 0.05))
+    task = ObjectsTask(detector=FakeDetector(), embed=fake_embed, memory=mem)
+    shared = task.thumbs / ("a" * 32 + ".jpg")
+    shared.write_bytes(b"x")
+    other.teach([1, 0, 0, 0], "bag", thumb=shared.name)
+    other.close()
+    pid = mem.teach([1, 0, 0, 0], "bag", thumb=shared.name)
+    mem.forget_example(pid)
+    task.gc_thumbs()
+    assert shared.exists()              # still used by the clip-b32 memory
+    mem.close()
+
+
+def test_encoder_registry_dims():
+    from teachable_eye.encoders import ENCODERS, encoder_dim
+    assert encoder_dim("dinov2-large") == 2048 and encoder_dim("clip-b32") == 512
+    assert set(config.DEFAULT_OBJECT_BANDS) == set(ENCODERS)

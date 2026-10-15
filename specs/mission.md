@@ -120,6 +120,11 @@ What the phone tests taught us about the mission itself (details: `roadmap.md` s
 - **Calibrate before trusting.** Thresholds came from another camera; on the phone some unrelated
   objects score close to the bar (correctly `uncertain`). Measured calibration (evaluation tool) comes
   before more features and before any aircraft claim (principle 6).
+- **Better models are chosen by measurement, not by size.** The object encoder moved from CLIP to
+  DINOv2-large because it separated the author's own objects on a benchmark, at almost the same speed.
+  The heavier detector was not upgraded: its errors are not where ours are.
+- **Cloud help is optional.** An LLM (Anthropic API) may suggest names or write reports when the user
+  asks; it never decides, never sees faces, and the app works fully without it.
 - **Some targets are not "objects".** Small debris on a surface was not detected as an object; that
   points to anomaly detection on a learned "clean surface" — a candidate second demo for aviation
   (FOD on runway/apron), kept in the roadmap backlog, not in scope yet.

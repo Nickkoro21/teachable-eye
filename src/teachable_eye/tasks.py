@@ -27,6 +27,7 @@ from teachable_eye.memory import TaskMemory
 from teachable_eye.vote import LabelVote
 
 THUMB_SIZE = 160
+CROP_SIZE = 384      # kept per taught view, so memory can be re-embedded
 HOLD_SECONDS = 300     # how long a TEACH selection waits for its name
 EDGE = 0.02            # a box this close to a frame edge "touches" it
 
@@ -143,6 +144,10 @@ class VisualTask:
         self.source = source
         self.thumbs = config.DATA_DIR / "thumbs" / self.name
         self.thumbs.mkdir(parents=True, exist_ok=True)
+        # the taught crops themselves: a new encoder can rebuild the memory
+        # from them (tools/reembed.py) instead of the user re-teaching
+        self.crops = config.DATA_DIR / "crops" / self.name
+        self.crops.mkdir(parents=True, exist_ok=True)
         self._lock = threading.Lock()
         self._votes = {}        # tid -> LabelVote
         self._shown = {}        # tid -> Decision currently displayed
@@ -292,6 +297,7 @@ class VisualTask:
                 for c, vec in zip(crops, vectors):
                     thumb = self._save_thumb(c)
                     pid = self.memory.teach(vec, label, thumb=thumb,
+                                            crop=self._save_crop(c),
                                             source=self.source)
                     ids.append(pid)
                     if augs:
@@ -391,24 +397,56 @@ class VisualTask:
                             [cv2.IMWRITE_JPEG_QUALITY, 80])[1].tobytes()
 
     def gc_thumbs(self):
-        """Delete thumbnail files no memory point refers to any more.
+        """Delete thumbnail and crop files no memory point refers to any more.
 
         Forgetting must remove the pictures too, not only the vectors
         (mission principle 5: people can be forgotten completely).
         """
         in_use = self.memory.thumbs_in_use()
+        # other encoders' memories of this task may share the same pictures
+        for other in self.sibling_memory_dirs():
+            try:
+                mem = TaskMemory(other, 1, self.name, self.memory.thresholds)
+            except SystemExit:
+                return 0                          # in use elsewhere: keep all
+            try:
+                in_use |= mem.thumbs_in_use()
+            finally:
+                mem.close()
         removed = 0
-        for path in self.thumbs.glob("*.jpg"):
-            if path.name not in in_use:
-                path.unlink(missing_ok=True)
-                removed += 1
+        for folder in (self.thumbs, self.crops):
+            for path in folder.glob("*.jpg"):
+                if path.name not in in_use:
+                    path.unlink(missing_ok=True)
+                    removed += 1
         return removed
+
+    def sibling_memory_dirs(self):
+        """Memories of this task kept for other encoders (objects only)."""
+        return []
+
+    def _save_crop(self, crop):
+        h, w = crop.shape[:2]
+        scale = min(1.0, CROP_SIZE / max(h, w))
+        img = crop if scale == 1.0 else cv2.resize(
+            crop, (max(1, int(w * scale)), max(1, int(h * scale))),
+            interpolation=cv2.INTER_AREA)
+        name = f"{uuid.uuid4().hex}.jpg"
+        cv2.imwrite(str(self.crops / name), img, [cv2.IMWRITE_JPEG_QUALITY, 92])
+        return name
 
     def _save_thumb(self, crop):
         name = f"{uuid.uuid4().hex}.jpg"
         cv2.imwrite(str(self.thumbs / name), self._small(crop),
                     [cv2.IMWRITE_JPEG_QUALITY, 85])
         return name
+
+
+def object_memory_dir(encoder):
+    """Each encoder has its own memory: vectors of different models are not
+    comparable. clip-b32 keeps the original folder name."""
+    base = config.DATA_DIR / "memory"
+    return base / "objects" if encoder == "clip-b32" else base / f"objects-{encoder}"
 
 
 class ObjectsTask(VisualTask):
@@ -422,10 +460,19 @@ class ObjectsTask(VisualTask):
         if detector is None:
             from teachable_eye.detect import Detector
             detector = Detector()
+        self.encoder = config.OBJECT_ENCODER
+        self._memory_dir = object_memory_dir(self.encoder)
         super().__init__(
             detector, embed or encoders.embed_crops,
-            memory or TaskMemory(config.DATA_DIR / "memory" / self.name,
-                                 encoders.CLIP_DIM, self.name, config.OBJECTS))
+            memory or TaskMemory(object_memory_dir(self.encoder),
+                                 encoders.encoder_dim(self.encoder),
+                                 self.name, config.OBJECTS))
+
+    def sibling_memory_dirs(self):
+        base = config.DATA_DIR / "memory"
+        return [d for d in base.glob("objects*")
+                if d.is_dir() and d.resolve() != self._memory_dir.resolve()
+                and (d / "edge_config.json").exists()]
 
 
 class PeopleTask(VisualTask):

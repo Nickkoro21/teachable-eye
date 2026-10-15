@@ -202,7 +202,10 @@ class TaskMemory:
         with self._lock:
             records, _ = self.shard.scroll(ScrollRequest(
                 limit=SCAN_LIMIT, with_payload=True))
-        return {r.payload.get("thumb") for r in records if r.payload.get("thumb")}
+        names = set()
+        for r in records:
+            names.update(v for v in (r.payload.get("thumb"), r.payload.get("crop")) if v)
+        return names
 
     def _ids_of(self, label):
         with self._lock:

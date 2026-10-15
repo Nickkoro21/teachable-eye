@@ -1,6 +1,6 @@
 # Tech Stack
 
-> Status: **v1.1** (2026-10-15: "As built" section after feature 01) — choices marked *(decide by measurement)* are settled by a benchmark inside a feature, not up front.
+> Status: **v1.2** (2026-10-15: object encoder stepped up to DINOv2-large; "As built" section) — choices marked *(decide by measurement)* are settled by a benchmark inside a feature, not up front.
 
 ## Core
 
@@ -19,7 +19,7 @@
 
 | Task | Detector / ROI | Encoder | Decision |
 |---|---|---|---|
-| Objects | YOLOE-11L-seg prompt-free (Ultralytics, **AGPL-3.0**) + BoT-SORT; user boxes followed by **VitTrack** (OpenCV Zoo, Apache-2.0) | CLIP ViT-B/32 (512-d) baseline; SigLIP / DINOv2 candidates *(decide by measurement)* | k-NN over taught views + threshold + `uncertain` margin |
+| Objects | YOLOE-11L-seg prompt-free (Ultralytics, **AGPL-3.0**) + BoT-SORT; user boxes followed by **VitTrack** (OpenCV Zoo, Apache-2.0) | **DINOv2 ViT-L/14** (Meta, Apache-2.0; CLS + mean patch tokens, 2048-d, fp16 CUDA) — chosen by measurement; CLIP ViT-B/32, SigLIP 2, Unicom, DINOv2-base selectable (`OBJECT_ENCODER`) | k-NN over taught views + threshold + `uncertain` margin |
 | People | **YuNet** face detector (OpenCV Zoo, Apache-2.0) | **SFace** (OpenCV Zoo, Apache-2.0) | k-NN + threshold; faces never leave the device |
 | Approach — system | Aircraft detection + tracking | Crop embedding for gear (k-NN) + **landing-light detector** (brightness/saturation blob in the tracked box, temporal persistence) | Rule: `secured` iff gear-down ∧ light-on, else `possibly-unsecured`/`uncertain`; vote over N frames |
 | Approach — glide path | Aircraft tracking (fixed ground camera) | Trajectory → fixed-length vector (resampled position/size over time) | k-NN against labelled approaches + `uncertain` |
@@ -40,11 +40,23 @@ Excluded: InsightFace/ArcFace pretrained weights (non-commercial licence).
 | `detect.py` | YOLOE + BoT-SORT, stability gate (3 frames), masked padded crops, re-query every 2 s; photos at 1280 px |
 | `faces.py` | YuNet + greedy IoU tracker + landmark-aligned SFace embeddings |
 | `follow.py` | `FollowTrack`: VitTrack from a user box; replaces an overlapping detector box (IoU ≥ 0.5); ends after 8 unsure frames |
-| `encoders.py` | CLIP via fastembed on CUDA (ONNX Runtime GPU), provider selection |
+| `encoders.py` | Encoder registry, one interface (`embed`, `dim`): `clip-b32`, `unicom-b16` (fastembed ONNX), `siglip2-base`, `dinov2-base`, `dinov2-large` (transformers, fp16 CUDA) |
 | `server.py` | FastAPI: `/ws` frames (one active camera), `/api/{hold,teach,burst,still,region,follow,unfollow,memory,rename,forget,forget_example,wipe,status}`, thumbnails; app shell served `no-cache` with content-hashed asset URLs |
 | `web/` | Phone PWA (vanilla JS): landing page, live overlay, tap/cycle selection, photo pause with draw/resize, TEACH sheet with label chooser, Video burst, Memory with variants, EN/EL, front/back camera, 3-2-1, diagnostics |
 
-**Key parameters** (`.env`, defaults in `.env.example`): `OBJECTS_THRESHOLD=0.90`, `OBJECTS_MARGIN=0.05`,
+**Encoder step-up (2026-10-15)** — `tools/bench_encoders.py` on two small local multi-view sets (author's phone thumbnails: 13 images / 3 labels; course objects: 16 / 6):
+
+| encoder | phone AUC | phone margin | course margin | ms/img |
+|---|---|---|---|---|
+| clip-b32 | 0.902 | −0.137 | +0.141 | 3–12 |
+| siglip2-base | 0.932 | −0.191 | +0.157 | 10–15 |
+| unicom-b16 | 0.994 | −0.045 | +0.271 | 6–13 |
+| dinov2-base | 1.000 | +0.033 | +0.326 | 10–22 |
+| **dinov2-large** | **1.000** | **+0.057** | **+0.396** | 7–14 |
+
+Only DINOv2 fully separates same-object from different-object pairs on the phone set. Live cost: ~63 ms per 960 px frame (vs ~55 ms with CLIP). Sets are small: indicative, to be confirmed by the evaluation tool on new phone data. Each encoder has its **own memory** (`data/memory/objects-<encoder>`; `clip-b32` keeps `data/memory/objects`) and its own **provisional** bands (`config.DEFAULT_OBJECT_BANDS`; dinov2-large 0.45/0.10). Taught **crops (384 px) are now kept** in `data/crops/` so `tools/reembed.py --from A --to B` rebuilds a memory for another encoder; the existing 13 views were migrated from their 160 px thumbnails. Thumbnail/crop clean-up checks every encoder's memory before deleting a shared file.
+
+**Key parameters** (`.env`, defaults in `.env.example`): `OBJECT_ENCODER=dinov2-large`, objects bands per encoder,
 `PEOPLE_THRESHOLD=0.40`, `PEOPLE_MARGIN=0.06`, `DETECT_CONF=0.30`, `DETECT_MIN_AREA=0.0003`,
 `DETECT_MAX_AREA=0.90`, `AUGMENT=on`, `ENCODER_DEVICE=auto`. Boxes touching two frame edges are
 flagged `background`. Bursts keep up to 10 views in 5 s, a view only if cosine < 0.95 to all kept views.

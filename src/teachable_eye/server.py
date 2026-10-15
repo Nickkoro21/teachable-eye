@@ -145,6 +145,7 @@ def create_app(tasks, cert_path=None, info=None):
         return {
             "tasks": {name: {"threshold": t.memory.thresholds.threshold,
                              "margin": t.memory.thresholds.margin,
+                             "encoder": getattr(t, "encoder", None),
                              "examples": t.memory.count()}
                       for name, t in tasks.items()},
             **(info or {}),

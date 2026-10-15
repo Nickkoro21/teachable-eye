@@ -1,6 +1,6 @@
 # Roadmap
 
-> Status: **v1.1** (2026-10-15: Phase 1 progress, status log, next steps, backlog). Each phase is delivered with the SDD feature loop: `specs/features/NN-name/{feature-plan,requirements,validation}.md` → implement on a feature branch → validate (human-in-the-loop) → replan.
+> Status: **v1.2** (2026-10-15 evening: label-all, encoder step-up, Anthropic API ideas). Each phase is delivered with the SDD feature loop: `specs/features/NN-name/{feature-plan,requirements,validation}.md` → implement on a feature branch → validate (human-in-the-loop) → replan.
 > Phases 0–6 lead to **Demo v1** (approval). Phases 7+ follow once the project is approved and better equipment is available.
 
 ## Phase 0: Constitution & repo
@@ -70,12 +70,18 @@ Observations from phone tests to carry forward:
   optional "create variants for old views" action (thumbnails are only 160 px, so lower quality).
 - Labels differing only by accent (`ποτήρι` / `ποτηρι`) existed; merge by renaming one onto the other.
 
+**2026-10-15 (evening)** — Multi-label a photo done (R32, R33: fix corners / add boxes inside the list). Object encoder stepped up from CLIP ViT-B/32 to **DINOv2-large** after `tools/bench_encoders.py` (only DINOv2 separated same/different objects on the phone set; details in tech-stack). Per-encoder memories, kept crops, `tools/reembed.py`; the author's 13 views migrated. Thresholds for DINOv2-large are provisional (0.45 / 0.10) until evaluation. 42 tests passing.
+
 ## Next steps (in order)
 1. ~~**Multi-label a photo**~~ — done 2026-10-15 (R32): on a paused photo, "Label all" lists every box
    (detected and user-drawn) with a thumbnail and a label field each (existing-label chooser,
    pre-filled when memory already knows it, empty = skip); tapping a row highlights its box; one
    Save teaches all (each with its variants). Built on the existing per-box hold.
-2. TG5 evaluation tool + calibrate thresholds on the author's phone photos (`<label>_<n>.jpg` in `data/`).
+2. **Data collection (author, 2026-10-16)** + TG5 evaluation tool: held-out views per object, never-taught
+   "strangers", confusion matrix, dangerous-error rate, threshold sweep → recommended bands, views-needed
+   curve, with/without augmentation, k-NN vs logistic regression, and encoder comparison on the same data.
+   Collection method still to choose: (A) in-app "save for evaluation" switch in TEACH / Label all,
+   saved to `data/eval/` and not to memory — recommended; or (B) phone photos named `<label>_<n>.jpg`.
 3. TG7 voice teach (EN/EL).
 4. Validation sign-off, SDD deep review (sub-agents), merge feature 01 into `main`, changelog.
 5. Replan: licence review of the detector (see tech-stack), then Phase 2 (video file import + aircraft
@@ -96,11 +102,23 @@ Observations from phone tests to carry forward:
 - **Tracking upgrades for aircraft**: ByteTrack / OC-SORT + Kalman smoothing → trajectory vectors;
   SAM 2 for precise masks.
 - Encoder comparison: SigLIP 2 / DINOv2 / larger CLIP vs CLIP ViT-B/32 (measured with the TG5 tool).
-- **Keep the taught crops** (e.g. 384 px, local only) next to the 160 px thumbnails, so memory can be
+- ~~Keep the taught crops~~ (done 2026-10-15) (e.g. 384 px, local only) next to the 160 px thumbnails, so memory can be
   re-embedded when the encoder changes, instead of re-teaching everything (vectors of different
   encoders are not comparable).
 - Model size ladder per platform: PC GPU (large/base) now; phone on-device later needs small/nano
   variants (e.g. YOLOE-S, MobileCLIP) — decided by the same evaluation.
+
+### Anthropic API (the author has a key) — optional, off by default
+Cloud calls conflict with "on-device first", so any use is opt-in, per action, never for faces and
+never for the approach decision. Candidates (Claude with vision):
+- **Name suggestions** in "Label all": send the box crops (objects only) and pre-fill suggested names;
+  the user still confirms every label.
+- **Second opinion on `uncertain`** objects during data collection (assist labelling, not deciding).
+- **Report writing**: turn evaluation JSON into a clear Greek/English summary for decision makers.
+- **Natural-language questions over memory** ("when did I last teach the bag?") answered from
+  memory metadata only (no images sent).
+- **Development**: spec reviews, test ideas (already used through Claude Code).
+The key stays in an environment variable (`ANTHROPIC_API_KEY`), never in the repo.
 
 ## Open questions
 - Will the phone or camera always stand at the **same position**? (affects trajectory calibration)

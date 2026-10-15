@@ -41,10 +41,23 @@ class TaskThresholds:
 # Data never leaves this directory (git-ignored, mission principle 4).
 DATA_DIR = Path(os.environ.get("TEYE_DATA_DIR", "") or REPO / "data")
 
-# Objects: CLIP ViT-B/32 on masked crops. The robot's live-crop calibration
-# (0.90 / 0.05) is the starting point; re-calibrate with tools/evaluate.py.
-OBJECTS = TaskThresholds(_num("OBJECTS_THRESHOLD", 0.90),
-                         _num("OBJECTS_MARGIN", 0.05))
+# Image encoder of the objects task (see encoders.ENCODERS). Each encoder has
+# its own memory directory and its own score scale, so its own thresholds.
+# dinov2-large won the 2026-10-15 comparison (tools/bench_encoders.py).
+OBJECT_ENCODER = os.environ.get("OBJECT_ENCODER", "dinov2-large").strip() or "dinov2-large"
+
+# PROVISIONAL bands per encoder until the evaluation tool calibrates them on
+# the author's phone. clip-b32: the robot's live-crop calibration. Others: set
+# between same-object and different-object scores of the encoder benchmark.
+DEFAULT_OBJECT_BANDS = {
+    "clip-b32": (0.90, 0.05),
+    "siglip2-base": (0.88, 0.05),
+    "unicom-b16": (0.30, 0.07),
+    "dinov2-base": (0.45, 0.10),
+    "dinov2-large": (0.45, 0.10),
+}
+_t, _m = DEFAULT_OBJECT_BANDS.get(OBJECT_ENCODER, (0.90, 0.05))
+OBJECTS = TaskThresholds(_num("OBJECTS_THRESHOLD", _t), _num("OBJECTS_MARGIN", _m))
 
 # People: SFace cosine similarity. OpenCV's published match threshold is 0.363.
 PEOPLE = TaskThresholds(_num("PEOPLE_THRESHOLD", 0.40),
