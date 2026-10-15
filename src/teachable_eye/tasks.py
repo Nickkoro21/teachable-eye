@@ -16,6 +16,7 @@ from teachable_eye.memory import TaskMemory
 from teachable_eye.vote import LabelVote
 
 THUMB_SIZE = 160
+HOLD_SECONDS = 300   # how long a TEACH selection waits for its name
 EDGE = 0.02   # a box this close to a frame edge "touches" it
 
 
@@ -72,6 +73,8 @@ class ObjectsTask:
         self._votes = {}       # tid -> LabelVote
         self._shown = {}       # tid -> Decision currently displayed
         self._crops = {}       # tid -> last crop sent to memory (for teach)
+        self._holds = {}       # hold id -> (crop, tid or None, time)
+        self._still_crops = {} # photo-mode row id -> crop (last photo only)
 
     def reset(self):
         with self._lock:
@@ -109,35 +112,69 @@ class ObjectsTask:
                 out.append(row)
             return out
 
-    def teach(self, tid, label):
-        """Store the crop of track `tid` under `label`. Returns the example id."""
+    def hold(self, tid, from_still=False):
+        """Freeze what will be taught, at the moment TEACH is pressed.
+
+        The user may move the phone while typing the name; the tracker can
+        lose the object meanwhile. The held crop survives that. Returns a
+        hold id for `teach_held`.
+        """
         with self._lock:
-            track = self.detector.tracks.get(tid)
-            crop = self._crops.get(tid)
-            if crop is None and track is not None:
-                crop = track.crop
+            now = time.time()
+            self._holds = {k: v for k, v in self._holds.items()
+                           if now - v[2] < HOLD_SECONDS}
+            if from_still:
+                crop = self._still_crops.get(tid)
+            else:
+                track = self.detector.tracks.get(tid)
+                crop = track.crop if track is not None else None
+                if crop is None:
+                    crop = self._crops.get(tid)
             if crop is None:
                 raise LookupError("that object is no longer in view")
+            hid = uuid.uuid4().hex
+            self._holds[hid] = (crop.copy(), None if from_still else tid, now)
+            return hid
+
+    def teach_held(self, hid, label):
+        """Store a held crop under `label`. Returns the example id."""
+        with self._lock:
+            held = self._holds.pop(hid, None)
+            if held is None:
+                raise LookupError("the selection expired; press TEACH again")
+            crop, tid, _ = held
             vec = self.embed([crop])[0]
             thumb = self._save_thumb(crop)
-            pid = self.memory.teach(vec, label, thumb=thumb, source="phone")
-            # show the new label on the very next frame
-            self._votes.pop(tid, None)
-            self._shown.pop(tid, None)
-            if track is not None:
-                track.requery_now()
-                if track.crop is None:
-                    track.crop = crop
+            try:
+                pid = self.memory.teach(vec, label, thumb=thumb, source="phone")
+            except ValueError:
+                self._holds[hid] = held          # let the user fix the name
+                raise
+            # show the new label on the very next query of that track
+            if tid is not None:
+                self._votes.pop(tid, None)
+                self._shown.pop(tid, None)
+                track = self.detector.tracks.get(tid)
+                if track is not None:
+                    track.requery_now()
+                    if track.crop is None:
+                        track.crop = crop
             return pid
+
+    def teach(self, tid, label):
+        """Hold and teach in one step (used by tests and tools)."""
+        return self.teach_held(self.hold(tid), label)
 
     def still(self, frame):
         """Photo mode (R14): every detection with its decision, no tracking."""
         with self._lock:
             found = self.detector.detect_once(frame)
+            self._still_crops = {i: crop for i, (_, crop) in enumerate(found)}
             if not found:
                 return []
             vectors = self.embed([crop for _, crop in found])
-            return [dict({"id": i, "box": box, "focus": False},
+            return [dict({"id": i, "box": box, "focus": False,
+                          "background": is_background(box)},
                          **self.memory.recognize(vec).to_json())
                     for i, ((box, _), vec) in enumerate(zip(found, vectors))]
 

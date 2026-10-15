@@ -34,10 +34,17 @@ def decode_jpeg(data):
     return frame
 
 
-class TeachBody(BaseModel):
+class HoldBody(BaseModel):
     task: str
     id: int
+    still: bool = False      # the id refers to the last photo, not a live track
+
+
+class TeachBody(BaseModel):
+    task: str
     label: str
+    hold: str | None = None  # from /api/hold (preferred)
+    id: int | None = None    # live track id (hold + teach in one step)
     consent: bool = False
 
 
@@ -144,13 +151,27 @@ def create_app(tasks, cert_path=None, info=None):
             if state["active"] is socket:
                 state["active"] = None
 
+    @app.post("/api/hold")
+    async def hold(body: HoldBody):
+        """TEACH pressed: freeze the selected crop until it gets a name."""
+        try:
+            hid = await run(task_of(body.task).hold, body.id, body.still)
+        except LookupError as exc:
+            raise HTTPException(409, str(exc)) from None
+        return {"hold": hid}
+
     @app.post("/api/teach")
     async def teach(body: TeachBody):
         task = task_of(body.task)
         if getattr(task, "needs_consent", False) and not body.consent:
             raise HTTPException(428, "consent required for a person")
         try:
-            pid = await run(task.teach, body.id, body.label)
+            if body.hold:
+                pid = await run(task.teach_held, body.hold, body.label)
+            elif body.id is not None:
+                pid = await run(task.teach, body.id, body.label)
+            else:
+                raise HTTPException(400, "missing hold or id")
         except (LookupError, ValueError) as exc:
             raise HTTPException(409, str(exc)) from None
         return {"id": pid}

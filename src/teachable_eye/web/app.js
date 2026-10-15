@@ -147,7 +147,7 @@ function setConn(kind) {
 
 async function pump() {
   const now = performance.now();
-  if (state.wsReady && !state.waiting && !state.still && !document.hidden
+  if (state.wsReady && !state.waiting && !state.still && !state.naming && !document.hidden
       && now - state.lastSent >= MIN_INTERVAL_MS) {
     const blob = await snapshot(MAX_SIDE, 0.7);
     if (blob && state.ws && state.ws.readyState === WebSocket.OPEN) {
@@ -318,23 +318,38 @@ async function api(path, body) {
   return data;
 }
 
-function openTeach() {
+// TEACH freezes the selection on the server at once (a "hold"), so moving the
+// phone while typing the name cannot lose the object. Live frames pause
+// until the sheet closes.
+async function openTeach() {
   const r = currentTarget();
-  if (!r || state.still) { toast(t("nothingSelected")); return; }
-  state.teachId = r.id;
+  if (!r) { toast(t("nothingSelected")); return; }
+  const thumb = cropPreview(r.box);
+  try {
+    const res = await api("/api/hold", { task: state.task, id: r.id, still: !!state.still });
+    state.holdId = res.hold;
+  } catch (err) { toast(err.message, 4000); return; }
+  state.naming = true;
   $("labelInput").value = r.label || r.guess || "";
   $("labelInput").placeholder = state.task === "people" ? t("labelPerson") : t("labelObject");
   $("consentRow").hidden = state.task !== "people";
   $("consent").checked = false;
-  const thumb = cropPreview(r.box);
   if (thumb) $("teachThumb").src = thumb; else $("teachThumb").removeAttribute("src");
   $("sheet").hidden = false;
   setTimeout(() => $("labelInput").focus(), 50);
 }
 
-// What exactly will be taught: the target's region of the current video frame.
+function closeTeach() {
+  $("sheet").hidden = true;
+  state.naming = false;
+  state.holdId = null;
+}
+
+// What exactly will be taught: the target's region of the current picture.
 function cropPreview(box) {
-  const vw = video.videoWidth, vh = video.videoHeight;
+  const img = state.still ? frozen : video;
+  const vw = state.still ? frozen.width : video.videoWidth;
+  const vh = state.still ? frozen.height : video.videoHeight;
   if (!vw || !vh) return null;
   const [x1, y1, x2, y2] = box;
   const sx = x1 * vw, sy = y1 * vh, sw = (x2 - x1) * vw, sh = (y2 - y1) * vh;
@@ -342,20 +357,26 @@ function cropPreview(box) {
   const c = document.createElement("canvas");
   const s = 192 / Math.max(sw, sh);
   c.width = Math.round(sw * s); c.height = Math.round(sh * s);
-  c.getContext("2d").drawImage(video, sx, sy, sw, sh, 0, 0, c.width, c.height);
+  c.getContext("2d").drawImage(img, sx, sy, sw, sh, 0, 0, c.width, c.height);
   return c.toDataURL("image/jpeg", 0.85);
 }
 
 async function submitTeach(ev) {
   ev.preventDefault();
   const label = $("labelInput").value.trim();
-  if (!label) return;
+  if (!label || !state.holdId) return;
   if (state.task === "people" && !$("consent").checked) { toast(t("consentNeeded")); return; }
+  const save = $("saveBtn");
+  save.disabled = true;
   try {
-    await api("/api/teach", { task: state.task, id: state.teachId, label, consent: $("consent").checked });
+    await api("/api/teach", { task: state.task, hold: state.holdId, label, consent: $("consent").checked });
     toast(t("taught", label));
-    $("sheet").hidden = true;
-  } catch (err) { toast(err.message, 4000); }
+    closeTeach();
+  } catch (err) {
+    toast(err.message, 4000);
+  } finally {
+    save.disabled = false;
+  }
 }
 
 async function takePhoto() {
@@ -370,13 +391,13 @@ async function takePhoto() {
   frozen.hidden = false;
   state.still = { rows: data.rows, w: data.w, h: data.h };
   state.selected = null;
-  $("photoBtn").hidden = true; $("liveBtn").hidden = false; $("teachBtn").disabled = true;
+  $("photoBtn").hidden = true; $("liveBtn").hidden = false;
   updateHint();
 }
 
 function backToLive() {
   state.still = null; frozen.hidden = true; state.selected = null;
-  $("photoBtn").hidden = false; $("liveBtn").hidden = true; $("teachBtn").disabled = false;
+  $("photoBtn").hidden = false; $("liveBtn").hidden = true;
   renderCard(); updateHint();
 }
 
@@ -452,7 +473,7 @@ overlay.addEventListener("click", (ev) => {
   renderCard();
 });
 $("teachBtn").onclick = openTeach;
-$("cancelTeach").onclick = () => { $("sheet").hidden = true; };
+$("cancelTeach").onclick = closeTeach;
 $("teachForm").onsubmit = submitTeach;
 $("photoBtn").onclick = takePhoto;
 $("liveBtn").onclick = backToLive;

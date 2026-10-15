@@ -34,6 +34,16 @@ class FakeTask:
         self.taught.append(label)
         return self.memory.teach([1, 0, 0, 0], label)
 
+    def hold(self, tid, from_still=False):
+        if tid != 1:
+            raise LookupError("that object is no longer in view")
+        return "h1"
+
+    def teach_held(self, hid, label):
+        if hid != "h1":
+            raise LookupError("the selection expired; press TEACH again")
+        return self.teach(1, label)
+
 
 def jpeg(w=64, h=48):
     ok, buf = cv2.imencode(".jpg", np.full((h, w, 3), 127, np.uint8))
@@ -96,6 +106,16 @@ def test_teach_memory_rename_forget(setup):
     assert client.post("/api/forget", json={"task": "objects",
                                             "label": "cap"}).json()["deleted"] == 1
     assert client.get("/api/memory?task=objects").json()["labels"] == []
+
+
+def test_hold_then_teach(setup):
+    client, task = setup
+    hid = client.post("/api/hold", json={"task": "objects", "id": 1}).json()["hold"]
+    r = client.post("/api/teach", json={"task": "objects", "hold": hid, "label": "cup"})
+    assert r.status_code == 200 and task.taught == ["cup"]
+    assert client.post("/api/hold", json={"task": "objects", "id": 5}).status_code == 409
+    assert client.post("/api/teach", json={"task": "objects", "hold": "zz",
+                                           "label": "x"}).status_code == 409
 
 
 def test_still_and_unknown_task(setup):
