@@ -71,7 +71,7 @@ Observations from phone tests to carry forward:
 - Labels differing only by accent (`ποτήρι` / `ποτηρι`) existed; merge by renaming one onto the other.
 
 ## Next steps (in order)
-1. **Multi-label a photo** (requested 2026-10-15, R32): on a paused photo, "Label all" lists every box
+1. ~~**Multi-label a photo**~~ — done 2026-10-15 (R32): on a paused photo, "Label all" lists every box
    (detected and user-drawn) with a thumbnail and a label field each (existing-label chooser,
    pre-filled when memory already knows it, empty = skip); tapping a row highlights its box; one
    Save teaches all (each with its variants). Built on the existing per-box hold.

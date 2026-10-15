@@ -68,6 +68,7 @@
     <button id="liveBtn" class="round" data-i18n="live" hidden>Live</button>
     <button id="teachBtn" class="big" data-i18n="teach">TEACH</button>
     <button id="videoBtn" class="round" data-i18n="video">Video</button>
+    <button id="labelAllBtn" class="round" data-i18n="labelAllShort" hidden>All</button>
   </footer>
 
   <!-- name sheet -------------------------------------------------------- -->
@@ -89,6 +90,24 @@
       <div class="row">
         <button type="button" id="cancelTeach" data-i18n="cancel">Cancel</button>
         <button type="submit" id="saveBtn" class="primary" data-i18n="save">Save</button>
+      </div>
+    </form>
+  </div>
+
+  <!-- label every box of a paused photo at once (R32) -->
+  <div id="multi" class="sheet multi" hidden>
+    <form id="multiForm">
+      <h3 data-i18n="labelAll">Label all</h3>
+      <small data-i18n="labelAllHint">Each number matches a box on the photo. Empty = skip.</small>
+      <div id="multiList"></div>
+      <datalist id="labelOptions"></datalist>
+      <label id="multiConsentRow" class="consent" hidden>
+        <input type="checkbox" id="multiConsent">
+        <span data-i18n="consentAll">These people agreed to be remembered on this device.</span>
+      </label>
+      <div class="row">
+        <button type="button" id="multiCancel" data-i18n="cancel">Cancel</button>
+        <button type="submit" id="multiSave" class="primary" data-i18n="save">Save</button>
       </div>
     </form>
   </div>

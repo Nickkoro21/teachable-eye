@@ -22,6 +22,9 @@ const I18N = {
     hintNone: "Point the camera at something.", hintPeopleNone: "Point the camera at a face.",
     hintPhoto: "Paused: tap a box, drag its corners to fix it, or drag anywhere for a new one. TEACH, or ▶ Live to follow it.",
     following: "Following your box.",
+    labelAll: "Label all", labelAllShort: "All", labelAllHint: "Each number matches a box on the photo. Empty = skip.",
+    skipPh: "(skip)", saveAll: "Save {0}", taughtMany: "Taught {0} labels.",
+    consentAll: "These people agreed to be remembered on this device.", noBoxes: "No boxes on this photo.",
     deleteViewConfirm: "Delete this view and its {0} variants?",
     augNote: "Each view also stores variants: zoom, mirror, darker (see Memory).",
     aug_zoom_center: "zoom", aug_flip: "mirror", aug_darker: "darker", variant: "variant",
@@ -55,6 +58,9 @@ const I18N = {
     hintNone: "Στόχευσε την κάμερα σε κάτι.", hintPeopleNone: "Στόχευσε την κάμερα σε ένα πρόσωπο.",
     hintPhoto: "Παύση: πάτα ένα πλαίσιο, σύρε τις γωνίες του για διόρθωση ή σύρε οπουδήποτε για νέο. ΜΑΘΕ, ή ▶ Ζωντανά για να το ακολουθήσει.",
     following: "Ακολουθώ το πλαίσιό σου.",
+    labelAll: "Ετικέτες σε όλα", labelAllShort: "Όλα", labelAllHint: "Κάθε αριθμός αντιστοιχεί σε πλαίσιο στη φωτογραφία. Κενό = παράλειψη.",
+    skipPh: "(παράλειψη)", saveAll: "Αποθήκευση {0}", taughtMany: "Έμαθα {0} ετικέτες.",
+    consentAll: "Τα πρόσωπα συμφώνησαν να τα θυμάται αυτή η συσκευή.", noBoxes: "Δεν υπάρχουν πλαίσια σε αυτή τη φωτογραφία.",
     deleteViewConfirm: "Διαγραφή αυτής της όψης και των {0} παραγώγων της;",
     augNote: "Κάθε όψη αποθηκεύει και παράγωγα: ζουμ, καθρέφτης, σκοτεινό (δες Μνήμη).",
     aug_zoom_center: "ζουμ", aug_flip: "καθρέφτης", aug_darker: "σκοτεινό", variant: "παράγωγο",
@@ -97,7 +103,7 @@ const state = {
   lang: store.get("lang", "en"),
   task: "objects", tasks: ["objects"],
   running: false, stream: null, facing: store.get("facing", "environment"),
-  counting: false, drag: null,
+  counting: false, drag: null, multi: null,
   ws: null, wsReady: false, waiting: false, lastSent: 0, retry: 0,
   rows: [], frameW: 1, frameH: 1, ms: 0,
   selected: null,        // track id the user tapped
@@ -342,6 +348,7 @@ function toFrame(px, py) {
 }
 
 function caption(r) {
+  if (r.taught) return `✓ ${r.label}`;
   if (r.decision === "known") return `${r.label} · ${r.score.toFixed(2)}`;
   if (r.decision === "uncertain") return `${t("maybe")} ${r.guess}? · ${r.score.toFixed(2)}`;
   if (r.decision === "pending") return t("pending");
@@ -418,6 +425,17 @@ function draw() {
       ctx.fillStyle = "#0b1220"; ctx.textAlign = "center";
       ctx.fillText("?", x + w - 2, y - 6); ctx.textAlign = "left";
     }
+  }
+  if (state.multi) {                         // numbered badges = list rows
+    state.multi.forEach((id, i) => {
+      const r = src.rows.find((q) => q.id === id);
+      if (!r) return;
+      const [x, y] = map(r.box);
+      ctx.fillStyle = r.id === state.selected ? "#14b8a6" : "#e8eefc";
+      ctx.beginPath(); ctx.arc(x + 12, y + 12, 12, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = "#0b1220"; ctx.textAlign = "center";
+      ctx.fillText(String(i + 1), x + 12, y + 4); ctx.textAlign = "left";
+    });
   }
   if (target) {
     const [x, y, w, h] = map(target.box);
@@ -658,6 +676,92 @@ async function submitTeach(ev) {
   }
 }
 
+// -- label all (R32) -----------------------------------------------------------
+// Every box of the paused photo in one list: real objects first (left to
+// right), background last. Pre-filled when memory already knows the object.
+async function openMulti() {
+  if (!state.still) return;
+  const rows = [...state.still.rows].sort((a, b) =>
+    (a.background - b.background) || (a.box[0] - b.box[0]));
+  if (!rows.length) { toast(t("noBoxes")); return; }
+  let labels = [];
+  try {
+    labels = (await (await fetch(`/api/memory?task=${state.task}`)).json()).labels || [];
+  } catch { /* typed names still work */ }
+  $("labelOptions").innerHTML = labels.map((g) => `<option value="${escapeHtml(g.label)}">`).join("");
+  state.multiLabels = labels.map((g) => g.label);
+  state.multi = rows.map((r) => r.id);
+  const list = $("multiList");
+  list.innerHTML = "";
+  rows.forEach((r, i) => {
+    const row = document.createElement("div");
+    row.className = "mrow";
+    row.dataset.id = r.id;
+    const thumb = cropPreview(r.box);
+    const known = r.taught || r.decision === "known" ? r.label : "";
+    const hint = r.decision === "uncertain" && r.guess ? `${t("maybe")} ${r.guess}?` : t("skipPh");
+    row.innerHTML = `<span class="num">${i + 1}</span>
+      ${thumb ? `<img src="${thumb}" alt="">` : "<img alt=''>"}
+      <input list="labelOptions" autocomplete="off" maxlength="60"
+             value="${escapeHtml(known || "")}" placeholder="${escapeHtml(hint)}">`;
+    const focus = () => {
+      state.selected = r.id;
+      list.querySelectorAll(".mrow").forEach((m) => m.classList.toggle("on", m === row));
+    };
+    row.addEventListener("click", focus);
+    row.querySelector("input").addEventListener("focus", focus);
+    row.querySelector("input").addEventListener("input", updateMultiSave);
+    list.appendChild(row);
+  });
+  $("multiConsentRow").hidden = state.task !== "people";
+  $("multiConsent").checked = false;
+  $("multi").hidden = false;
+  updateMultiSave();
+}
+
+function multiItems() {
+  return [...$("multiList").querySelectorAll(".mrow")].map((row) => {
+    let label = row.querySelector("input").value.trim();
+    // same word with other accents/case: use the label as stored
+    const same = (state.multiLabels || []).find((l) => fold(l) === fold(label));
+    if (label && same) label = same;
+    return { id: Number(row.dataset.id), label };
+  }).filter((it) => it.label);
+}
+
+function updateMultiSave() {
+  const n = multiItems().length;
+  $("multiSave").textContent = t("saveAll", n);
+  $("multiSave").disabled = n === 0;
+}
+
+function closeMulti() {
+  $("multi").hidden = true;
+  state.multi = null;
+}
+
+async function saveMulti(ev) {
+  ev.preventDefault();
+  const items = multiItems();
+  if (!items.length) return;
+  if (state.task === "people" && !$("multiConsent").checked) { toast(t("consentNeeded")); return; }
+  $("multiSave").disabled = true;
+  let done = 0;
+  for (const it of items) {
+    try {
+      const { hold } = await api("/api/hold", { task: state.task, id: it.id, still: true });
+      await api("/api/teach", { task: state.task, hold, label: it.label,
+                                consent: $("multiConsent").checked });
+      const r = state.still && state.still.rows.find((q) => q.id === it.id);
+      if (r) Object.assign(r, { taught: true, label: it.label.toLowerCase() });
+      done++;
+    } catch (err) { toast(`${it.label}: ${err.message}`, 4000); }
+  }
+  closeMulti();
+  toast(t("taughtMany", done));
+  renderCard();
+}
+
 // -- photo mode ---------------------------------------------------------------
 async function takePhoto() {
   if (state.counting) return;
@@ -673,7 +777,8 @@ async function takePhoto() {
   frozen.hidden = false;
   state.still = { rows: data.rows, w: data.w, h: data.h };
   state.selected = null;
-  $("photoBtn").hidden = true; $("liveBtn").hidden = false; $("videoBtn").disabled = true;
+  $("photoBtn").hidden = true; $("liveBtn").hidden = false;
+  $("videoBtn").hidden = true; $("labelAllBtn").hidden = false;
   renderCard(); updateHint();
 }
 
@@ -693,7 +798,9 @@ async function resumeLive() {
 
 function backToLive() {
   state.still = null; frozen.hidden = true; state.selected = null;
-  $("photoBtn").hidden = false; $("liveBtn").hidden = true; $("videoBtn").disabled = false;
+  $("photoBtn").hidden = false; $("liveBtn").hidden = true;
+  $("videoBtn").hidden = false; $("labelAllBtn").hidden = true;
+  closeMulti();
   renderCard(); updateHint();
 }
 
@@ -851,6 +958,9 @@ document.querySelectorAll("[data-start]").forEach((b) => { b.onclick = () => sta
 $("landLang").onclick = toggleLang;
 $("homeBtn").onclick = goHome;
 $("flipBtn").onclick = flipCamera;
+$("labelAllBtn").onclick = openMulti;
+$("multiCancel").onclick = closeMulti;
+$("multiForm").onsubmit = saveMulti;
 $("teachBtn").onclick = teachSelected;
 $("videoBtn").onclick = startBurst;
 $("recStop").onclick = () => stopBurst(true);
