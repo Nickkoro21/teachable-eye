@@ -51,6 +51,15 @@ uv run teachable-eye --host 0.0.0.0          # add --advertise <PC-LAN-IP> if th
 3. Show it again from another angle — the label appears. Untaught things stay `unknown`.
 
 Windows: the firewall must allow Python on the network the phone uses (a Wi-Fi marked *Public* blocks it unless allowed there).
+
+**Recommended: Tailscale** (works away from home, trusted certificate, nothing exposed on the Wi-Fi). With Tailscale on the PC and the phone:
+
+```powershell
+uv run teachable-eye --host 127.0.0.1 --no-https
+tailscale serve --bg --https=8443 http://127.0.0.1:8765   # once; persists. Undo: tailscale serve --https=8443 off
+```
+
+Then open `https://<pc-name>.<tailnet>.ts.net:8443` on the phone.
 Everything the app learns stays in `data/` on the PC (git-ignored).
 
 ## Development

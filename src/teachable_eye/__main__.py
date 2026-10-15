@@ -18,7 +18,9 @@ def main():
                          "(default: auto-detected)")
     ap.add_argument("--port", type=int, default=config.PORT)
     ap.add_argument("--no-https", action="store_true",
-                    help="plain HTTP (the phone camera will NOT work)")
+                    help="plain HTTP: use behind an HTTPS proxy such as "
+                         "Tailscale Serve, or on localhost only (a phone "
+                         "camera needs HTTPS)")
     ap.add_argument("--tasks", default="objects,people",
                     help="comma-separated tasks to load")
     args = ap.parse_args()
