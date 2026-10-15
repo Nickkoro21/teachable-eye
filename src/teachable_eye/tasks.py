@@ -150,6 +150,14 @@ class VisualTask:
         self._holds = {}        # hold id -> ([crops], tid or None, time)
         self._still_crops = {}  # photo-mode row id -> crop (last photo only)
         self._bursts = {}       # burst id -> Burst
+        self._still_frame = None  # last photo (for user-drawn regions)
+        self._live_wh = None      # size of the live frames (for follow)
+        self._follow = {}         # tid -> follow.FollowTrack (user boxes)
+        self._next_follow = 10_000
+
+    def _track(self, tid):
+        """A live track by id: user-followed boxes first, then the detector's."""
+        return self._follow.get(tid) or self.detector.tracks.get(tid)
 
     # -- live ------------------------------------------------------------------
 
@@ -160,11 +168,23 @@ class VisualTask:
             self._shown.clear()
             self._crops.clear()
             self._bursts.clear()
+            self._follow.clear()
 
     def process(self, frame, now=None):
         now = now or time.time()
         with self._lock:
+            self._live_wh = (frame.shape[1], frame.shape[0])
             tracks = self.detector.process(frame, now)
+            if self._follow:
+                from teachable_eye.follow import DUPLICATE_IOU, iou
+                for tid, ft in list(self._follow.items()):
+                    if not ft.update(frame, now):
+                        del self._follow[tid]          # lost it
+                followed = [ft.box for ft in self._follow.values()]
+                # the user's box wins over a detector box on the same thing
+                tracks = [t for t in tracks
+                          if all(iou(t.box, fb) < DUPLICATE_IOU for fb in followed)]
+                tracks += list(self._follow.values())
             bursting = {b.tid: b for b in self._bursts.values() if not b.done}
             # one batched embedding call: due recognitions + burst views
             due = [t for t in tracks if t.crop is not None
@@ -181,7 +201,7 @@ class VisualTask:
                     self._crops[t.tid] = t.crop
                     t.crop, t.crop_q = None, 0.0
             for store in (self._votes, self._shown, self._crops):
-                for tid in [k for k in store if k not in self.detector.tracks]:
+                for tid in [k for k in store if self._track(k) is None]:
                     del store[tid]
             boxes = {t.tid: t.norm_box() for t in tracks}
             focus = pick_focus(boxes)
@@ -189,7 +209,8 @@ class VisualTask:
             for t in tracks:
                 shown = self._shown.get(t.tid)
                 row = {"id": t.tid, "box": boxes[t.tid], "focus": t.tid == focus,
-                       "background": is_background(boxes[t.tid])}
+                       "background": is_background(boxes[t.tid]),
+                       "manual": getattr(t, "manual", False)}
                 row.update(shown.to_json() if shown else
                            {"decision": "pending", "label": None, "guess": None,
                             "score": 0.0, "neighbours": []})
@@ -208,7 +229,7 @@ class VisualTask:
             if from_still:
                 crop = self._still_crops.get(tid)
             else:
-                track = self.detector.tracks.get(tid)
+                track = self._track(tid)
                 crop = track.crop if track is not None else None
                 if crop is None:
                     crop = self._crops.get(tid)
@@ -219,7 +240,7 @@ class VisualTask:
     def start_burst(self, tid, seconds=BURST_SECONDS):
         """Teach from video: start collecting views of track `tid`."""
         with self._lock:
-            if tid not in self.detector.tracks:
+            if self._track(tid) is None:
                 raise LookupError("that object is no longer in view")
             bid = uuid.uuid4().hex
             self._bursts[bid] = Burst(tid, seconds)
@@ -285,7 +306,7 @@ class VisualTask:
             if tid is not None:                  # show the label at once
                 self._votes.pop(tid, None)
                 self._shown.pop(tid, None)
-                track = self.detector.tracks.get(tid)
+                track = self._track(tid)
                 if track is not None:
                     track.requery_now()
                     if track.crop is None:
@@ -298,9 +319,54 @@ class VisualTask:
 
     # -- photo mode --------------------------------------------------------------
 
+    supports_regions = False   # user-drawn boxes (see region)
+
+    def region(self, box):
+        """Photo mode: the user marked `box` (normalised) where the detector
+        found nothing. Recognize it and keep its crop so it can be taught."""
+        if not self.supports_regions:
+            raise LookupError("custom boxes are not available for this mode")
+        with self._lock:
+            if self._still_frame is None:
+                raise LookupError("take a photo first")
+            from teachable_eye.detect import box_crop
+            crop = box_crop(self._still_frame, box)
+            if crop.size == 0:
+                raise LookupError("that box is empty")
+            rid = 1000 + len(self._still_crops)
+            self._still_crops[rid] = crop
+            vec = self.embed([crop])[0]
+            return dict({"id": rid, "box": [round(float(v), 4) for v in box],
+                         "focus": False, "background": False, "manual": True},
+                        **self.memory.recognize(vec).to_json())
+
+    def follow(self, box):
+        """Resume live view following `box` (normalised) from the last photo.
+
+        The photo is scaled to the live frame size first, so the tracker
+        starts in the same pixel space it will be updated in.
+        """
+        if not self.supports_regions:
+            raise LookupError("following a box is not available for this mode")
+        with self._lock:
+            if self._still_frame is None:
+                raise LookupError("take a photo first")
+            from teachable_eye.follow import FollowTrack, scaled
+            frame = scaled(self._still_frame, self._live_wh)
+            tid = self._next_follow
+            self._next_follow += 1
+            self._follow[tid] = FollowTrack(tid, frame, box)
+            self._follow[tid].requery_now()
+            return tid
+
+    def unfollow(self, tid):
+        with self._lock:
+            return self._follow.pop(tid, None) is not None
+
     def still(self, frame):
         """Every detection in one photo with its decision (R14), no tracking."""
         with self._lock:
+            self._still_frame = frame
             found = self.detector.detect_once(frame)
             self._still_crops = {i: crop for i, (_, crop) in enumerate(found)}
             if not found:
@@ -335,6 +401,7 @@ class ObjectsTask(VisualTask):
     """YOLOE + tracking → masked crop → CLIP → memory (R7, R8)."""
 
     name = "objects"
+    supports_regions = True
 
     def __init__(self, detector=None, embed=None, memory=None):
         from teachable_eye import encoders

@@ -22,6 +22,7 @@ os.environ.setdefault("YOLO_AUTOINSTALL", "false")  # no pip calls at runtime
 
 WEIGHTS = "yoloe-11l-seg-pf.pt"
 IMGSZ = 640
+IMGSZ_STILL = 1280   # photos: small things (a gum on grass) need resolution
 MAX_DET = 64
 STABLE_FRAMES = 3      # passes before a track is shown or teachable
 REQUERY_SECONDS = 2.0  # how often a stable track re-asks memory
@@ -50,6 +51,13 @@ def padded_crop(frame, box, mask=None):
         region = region.copy()
         region[~inside] = FILL
     return region
+
+
+def box_crop(frame, nbox):
+    """Plain padded crop of a normalised box (user-drawn regions, no mask)."""
+    h, w = frame.shape[:2]
+    x1, y1, x2, y2 = nbox
+    return padded_crop(frame, [x1 * w, y1 * h, x2 * w, y2 * h])
 
 
 def crop_quality(frame, box, conf):
@@ -184,7 +192,7 @@ class Detector:
         """
         results = self.model.predict(
             frame, device=self.device, quantize=self.quantize, conf=self.conf,
-            imgsz=IMGSZ, max_det=MAX_DET, agnostic_nms=True, verbose=False)[0]
+            imgsz=IMGSZ_STILL, max_det=MAX_DET, agnostic_nms=True, verbose=False)[0]
         h, w = frame.shape[:2]
         out = []
         for _, _, box, mask in self._rows(results, w, h, with_ids=False):

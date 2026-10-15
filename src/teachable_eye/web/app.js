@@ -14,13 +14,15 @@ const I18N = {
     startObjects: "Start · Objects", startPeople: "Start · People",
     privacy: "Everything it learns stays on your PC. Faces are stored only with the person's consent and can be forgotten at any time.",
     serverOk: "PC connected · {0}", serverDown: "PC not reachable",
-    objects: "Objects", people: "People", memory: "Memory", photo: "Photo", live: "Live",
+    objects: "Objects", people: "People", memory: "Memory", photo: "⏸ Photo", live: "▶ Live",
     video: "Video", teach: "TEACH", teachTitle: "Name this", save: "Save", cancel: "Cancel",
     labelObject: "e.g. hat", labelPerson: "e.g. person-a",
     consent: "This person agreed to be remembered on this device.",
     hintChoose: "Tap a box to choose it — tap again for the next one under your finger.",
     hintNone: "Point the camera at something.", hintPeopleNone: "Point the camera at a face.",
-    hintPhoto: "Photo: tap a box, then TEACH. Live returns to the camera.",
+    hintPhoto: "Paused: tap a box, drag its corners to fix it, or drag anywhere for a new one. TEACH, or ▶ Live to follow it.",
+    following: "Following your box.",
+    liveTapHint: "Nothing there. Take a Photo to mark your own box.",
     known: "known", uncertain: "uncertain", unknown: "unknown", pending: "looking…",
     maybe: "maybe", views: "views", rename: "Rename", forget: "Forget",
     renamePrompt: "New name for “{0}”", forgetConfirm: "Forget “{0}” ({1} views)?",
@@ -42,13 +44,15 @@ const I18N = {
     startObjects: "Έναρξη · Αντικείμενα", startPeople: "Έναρξη · Πρόσωπα",
     privacy: "Ό,τι μαθαίνει μένει στο PC σου. Τα πρόσωπα αποθηκεύονται μόνο με συναίνεση και διαγράφονται όποτε θέλεις.",
     serverOk: "PC συνδεδεμένο · {0}", serverDown: "Το PC δεν απαντά",
-    objects: "Αντικείμενα", people: "Πρόσωπα", memory: "Μνήμη", photo: "Φωτό", live: "Ζωντανά",
+    objects: "Αντικείμενα", people: "Πρόσωπα", memory: "Μνήμη", photo: "⏸ Φωτό", live: "▶ Ζωντανά",
     video: "Βίντεο", teach: "ΜΑΘΕ", teachTitle: "Δώσε όνομα", save: "Αποθήκευση", cancel: "Άκυρο",
     labelObject: "π.χ. καπέλο", labelPerson: "π.χ. person-a",
     consent: "Το πρόσωπο συμφώνησε να το θυμάται αυτή η συσκευή.",
     hintChoose: "Πάτα ένα πλαίσιο για να το διαλέξεις — ξαναπάτα για το επόμενο.",
     hintNone: "Στόχευσε την κάμερα σε κάτι.", hintPeopleNone: "Στόχευσε την κάμερα σε ένα πρόσωπο.",
-    hintPhoto: "Φωτό: πάτα ένα πλαίσιο και ΜΑΘΕ. Το «Ζωντανά» επιστρέφει στην κάμερα.",
+    hintPhoto: "Παύση: πάτα ένα πλαίσιο, σύρε τις γωνίες του για διόρθωση ή σύρε οπουδήποτε για νέο. ΜΑΘΕ, ή ▶ Ζωντανά για να το ακολουθήσει.",
+    following: "Ακολουθώ το πλαίσιό σου.",
+    liveTapHint: "Δεν υπάρχει κάτι εκεί. Πάτα Φωτό για να σημειώσεις δικό σου πλαίσιο.",
     known: "γνωστό", uncertain: "αβέβαιο", unknown: "άγνωστο", pending: "κοιτάζω…",
     maybe: "ίσως", views: "όψεις", rename: "Μετονομασία", forget: "Ξέχνα",
     renamePrompt: "Νέο όνομα για «{0}»", forgetConfirm: "Να ξεχάσω το «{0}» ({1} όψεις);",
@@ -82,7 +86,8 @@ const store = {
 const state = {
   lang: store.get("lang", "en"),
   task: "objects", tasks: ["objects"],
-  running: false, stream: null,
+  running: false, stream: null, facing: store.get("facing", "environment"),
+  counting: false, drag: null,
   ws: null, wsReady: false, waiting: false, lastSent: 0, retry: 0,
   rows: [], frameW: 1, frameH: 1, ms: 0,
   selected: null,        // track id the user tapped
@@ -100,7 +105,6 @@ function t(key, ...args) {
 function applyLang() {
   document.documentElement.lang = state.lang;
   document.querySelectorAll("[data-i18n]").forEach((el) => { el.textContent = t(el.dataset.i18n); });
-  $("langBtn").textContent = state.lang === "en" ? "EL" : "EN";
   $("landLang").textContent = state.lang === "en" ? "Ελληνικά" : "English";
   updateHint();
 }
@@ -172,15 +176,43 @@ function goHome() {
 async function startCamera() {
   try {
     state.stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: { ideal: "environment" }, width: { ideal: 1920 }, height: { ideal: 1080 } },
+      video: { facingMode: { ideal: state.facing }, width: { ideal: 1920 }, height: { ideal: 1080 } },
       audio: false,
     });
     video.srcObject = state.stream;
+    document.body.classList.toggle("mirror", state.facing === "user");
     await video.play();
   } catch (err) {
     toast(t("cameraError", err.message || err.name), 8000);
   }
   try { await navigator.wakeLock?.request("screen"); } catch { /* optional */ }
+}
+
+// Front ("selfie") or back camera. A new camera is a new scene: reconnect so
+// the server resets its tracker.
+async function flipCamera() {
+  state.facing = state.facing === "user" ? "environment" : "user";
+  store.set("facing", state.facing);
+  stopBurst(false);
+  backToLive();
+  state.stream?.getTracks().forEach((tr) => tr.stop());
+  state.stream = null;
+  await startCamera();
+  if (state.running) { const old = state.ws; state.ws = null; old?.close(); connect(); }
+}
+
+// 3-2-1 so the user knows a photo / video teach is coming and can hold still.
+async function countdown(n = 3) {
+  state.counting = true;
+  const el = $("count");
+  for (let i = n; i > 0; i--) {
+    el.textContent = i; el.hidden = false;
+    el.style.animation = "none"; void el.offsetWidth; el.style.animation = "";
+    if (navigator.vibrate) navigator.vibrate(30);
+    await new Promise((r) => setTimeout(r, 700));
+  }
+  el.hidden = true;
+  state.counting = false;
 }
 
 function snapshot(maxSide, quality) {
@@ -279,8 +311,24 @@ function mapper(srcW, srcH) {
   const cw = overlay.clientWidth, ch = overlay.clientHeight;
   const scale = Math.max(cw / srcW, ch / srcH);
   const dx = (cw - srcW * scale) / 2, dy = (ch - srcH * scale) / 2;
-  return ([x1, y1, x2, y2]) => [dx + x1 * srcW * scale, dy + y1 * srcH * scale,
-                                (x2 - x1) * srcW * scale, (y2 - y1) * srcH * scale];
+  const mirror = state.facing === "user";
+  return ([x1, y1, x2, y2]) => {
+    const w = (x2 - x1) * srcW * scale;
+    let x = dx + x1 * srcW * scale;
+    if (mirror) x = cw - x - w;             // the picture is shown mirrored
+    return [x, dy + y1 * srcH * scale, w, (y2 - y1) * srcH * scale];
+  };
+}
+
+// Screen point -> normalised frame point (inverse of mapper).
+function toFrame(px, py) {
+  const src = source();
+  const cw = overlay.clientWidth, ch = overlay.clientHeight;
+  const scale = Math.max(cw / src.w, ch / src.h);
+  const dx = (cw - src.w * scale) / 2, dy = (ch - src.h * scale) / 2;
+  if (state.facing === "user") px = cw - px;
+  const clamp = (v) => Math.min(1, Math.max(0, v));
+  return [clamp((px - dx) / (src.w * scale)), clamp((py - dy) / (src.h * scale))];
 }
 
 function caption(r) {
@@ -325,6 +373,13 @@ function draw() {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, cw, ch);
   if (!state.running) return;
+  if (state.drag && state.drag.moved) {
+    const d = state.drag;
+    ctx.strokeStyle = "#f59e0b"; ctx.lineWidth = 2; ctx.setLineDash([8, 6]);
+    ctx.strokeRect(Math.min(d.x0, d.x1), Math.min(d.y0, d.y1),
+                   Math.abs(d.x1 - d.x0), Math.abs(d.y1 - d.y0));
+    ctx.setLineDash([]);
+  }
   const topLimit = $("top").offsetHeight + 4;
   const src = source();
   if (!src.rows.length) return;
@@ -363,7 +418,13 @@ function draw() {
     ctx.fillRect(x, y, w, h);
     ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.strokeRect(x, y, w, h);
     corners(x, y, w, h, color);
-    chip(`◎ ${caption(target)}`, x, y, color, topLimit, cw);
+    if (state.still) {                         // corner handles: drag to fix
+      ctx.fillStyle = "#ffffff";
+      for (const [hx, hy] of [[x, y], [x + w, y], [x, y + h], [x + w, y + h]]) {
+        ctx.fillRect(hx - 7, hy - 7, 14, 14);
+      }
+    }
+    chip(`${target.manual ? "✎" : "◎"} ${caption(target)}`, x, y, color, topLimit, cw);
   }
 }
 
@@ -408,7 +469,15 @@ function renderCard() {
   card.hidden = false;
 }
 
+// Keep the evidence card just above the hint, however many lines the hint has.
+function placeCard() {
+  const hint = $("hint");
+  const base = 104 + (hint.textContent ? hint.offsetHeight + 10 : 0);
+  $("card").style.bottom = `calc(env(safe-area-inset-bottom) + ${base}px)`;
+}
+
 function updateHint() {
+  queueMicrotask(placeCard);
   const hint = $("hint");
   if (!state.running || state.burst) { hint.textContent = ""; return; }
   const rows = source().rows;
@@ -435,7 +504,12 @@ async function teachSelected() {
 async function startBurst() {
   if (state.burst) return;
   if (state.still) backToLive();
-  const r = currentTarget();
+  const chosen = currentTarget();
+  if (state.counting) return;
+  if (!chosen) { toast(t("nothingSelected")); return; }
+  state.selected = chosen.id;               // keep it chosen during the count
+  await countdown(3);
+  const r = state.rows.find((x) => x.id === chosen.id);
   if (!r) { toast(t("nothingSelected")); return; }
   let res;
   try {
@@ -567,6 +641,8 @@ async function submitTeach(ev) {
 
 // -- photo mode ---------------------------------------------------------------
 async function takePhoto() {
+  if (state.counting) return;
+  await countdown(3);
   const blob = await snapshot(STILL_SIDE, 0.9);
   if (!blob) return;
   const res = await fetch(`/api/still?task=${state.task}`, { method: "POST", body: blob,
@@ -580,6 +656,20 @@ async function takePhoto() {
   state.selected = null;
   $("photoBtn").hidden = true; $("liveBtn").hidden = false; $("videoBtn").disabled = true;
   renderCard(); updateHint();
+}
+
+// ▶ Live after a pause: whatever box was chosen (detected, drawn or fixed)
+// is followed from that frame on, by a tracker started from that exact box.
+async function resumeLive() {
+  const chosen = state.still && state.selected != null
+    ? state.still.rows.find((r) => r.id === state.selected) : null;
+  backToLive();
+  if (!chosen || state.task !== "objects") return;
+  try {
+    const res = await api("/api/follow", { task: state.task, box: chosen.box });
+    state.selected = res.id;
+    toast(t("following"));
+  } catch (err) { toast(err.message, 4000); }
 }
 
 function backToLive() {
@@ -657,18 +747,80 @@ async function renderMemory() {
 }
 
 // -- wiring -------------------------------------------------------------------
-overlay.addEventListener("click", (ev) => {
-  if (state.burst) return;
+// Tap: choose a box (again: the next one under the finger). On a photo, a
+// tap on empty space or a drag marks a box of your own.
+function point(ev) {
   const rect = overlay.getBoundingClientRect();
-  const r = hitTest(ev.clientX - rect.left, ev.clientY - rect.top);
-  state.selected = r ? r.id : null;
-  if (navigator.vibrate && r) navigator.vibrate(15);
+  return [ev.clientX - rect.left, ev.clientY - rect.top];
+}
+overlay.addEventListener("pointerdown", (ev) => {
+  if (state.burst || state.counting) return;
+  const [x, y] = point(ev);
+  state.drag = { x0: x, y0: y, x1: x, y1: y, moved: false };
+  const target = state.still && state.selected != null ? currentTarget() : null;
+  if (target) {                              // near a corner of the chosen box?
+    const src = source();
+    const [bx, by, bw, bh] = mapper(src.w, src.h)(target.box);
+    const cs = [[bx, by], [bx + bw, by], [bx, by + bh], [bx + bw, by + bh]];
+    const i = cs.findIndex(([cx, cy]) => Math.hypot(cx - x, cy - y) < 32);
+    if (i >= 0) {
+      const opp = cs[3 - i];                 // the corner that stays put
+      state.drag = { x0: opp[0], y0: opp[1], x1: x, y1: y, moved: true, edit: target.id };
+    }
+  }
+  overlay.setPointerCapture(ev.pointerId);
+});
+overlay.addEventListener("pointermove", (ev) => {
+  if (!state.drag) return;
+  const [x, y] = point(ev);
+  state.drag.x1 = x; state.drag.y1 = y;
+  if (state.still && Math.hypot(x - state.drag.x0, y - state.drag.y0) > 14) state.drag.moved = true;
+});
+overlay.addEventListener("pointerup", () => {
+  const d = state.drag;
+  state.drag = null;
+  if (!d) return;
+  if (d.moved) {                                   // a drawn or fixed box
+    if (d.edit != null && state.still) {             // the fixed box replaces it
+      state.still.rows = state.still.rows.filter((r) => r.id !== d.edit);
+    }
+    const a = toFrame(d.x0, d.y0), b = toFrame(d.x1, d.y1);
+    markRegion([Math.min(a[0], b[0]), Math.min(a[1], b[1]),
+                Math.max(a[0], b[0]), Math.max(a[1], b[1])]);
+    return;
+  }
+  const r = hitTest(d.x0, d.y0);
+  if (r) {
+    state.selected = r.id;
+    if (navigator.vibrate) navigator.vibrate(15);
+  } else if (state.still) {                        // empty spot on a photo
+    const [fx, fy] = toFrame(d.x0, d.y0);
+    const short = Math.min(state.still.w, state.still.h);
+    const hw = 0.06 * short / state.still.w, hh = 0.06 * short / state.still.h;
+    const clamp = (v) => Math.min(1, Math.max(0, v));
+    markRegion([clamp(fx - hw), clamp(fy - hh), clamp(fx + hw), clamp(fy + hh)]);
+    return;
+  } else {
+    state.selected = null;
+    toast(t("liveTapHint"));
+  }
   renderCard();
 });
+
+async function markRegion(box) {
+  if (box[2] - box[0] < 0.005 || box[3] - box[1] < 0.005) return;
+  try {
+    const res = await api("/api/region", { task: state.task, box });
+    state.still.rows.push(res.row);
+    state.selected = res.row.id;
+    if (navigator.vibrate) navigator.vibrate(15);
+    renderCard(); updateHint();
+  } catch (err) { toast(err.message, 4000); }
+}
 document.querySelectorAll("[data-start]").forEach((b) => { b.onclick = () => start(b.dataset.start); });
 $("landLang").onclick = toggleLang;
-$("langBtn").onclick = toggleLang;
 $("homeBtn").onclick = goHome;
+$("flipBtn").onclick = flipCamera;
 $("teachBtn").onclick = teachSelected;
 $("videoBtn").onclick = startBurst;
 $("recStop").onclick = () => stopBurst(true);
@@ -676,7 +828,7 @@ $("cancelTeach").onclick = closeTeach;
 $("labelInput").addEventListener("input", markChoice);
 $("teachForm").onsubmit = submitTeach;
 $("photoBtn").onclick = takePhoto;
-$("liveBtn").onclick = backToLive;
+$("liveBtn").onclick = resumeLive;
 $("memBtn").onclick = openMemory;
 $("conn").onclick = () => { diag.on = !diag.on; renderDiag(); };
 $("closeMem").onclick = () => { $("memory").hidden = true; };

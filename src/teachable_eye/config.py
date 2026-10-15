@@ -51,7 +51,7 @@ PEOPLE = TaskThresholds(_num("PEOPLE_THRESHOLD", 0.40),
                         _num("PEOPLE_MARGIN", 0.06))
 
 DETECT_CONF = _num("DETECT_CONF", 0.30)
-DETECT_MIN_AREA = _num("DETECT_MIN_AREA", 0.002)
+DETECT_MIN_AREA = _num("DETECT_MIN_AREA", 0.0003)   # small things count too
 # Close-ups fill the frame, so large boxes are kept; boxes touching two frame
 # edges are flagged "background" (thin, never the default target) instead.
 DETECT_MAX_AREA = _num("DETECT_MAX_AREA", 0.90)

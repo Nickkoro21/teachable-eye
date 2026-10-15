@@ -51,6 +51,11 @@ class HoldBody(BaseModel):
     still: bool = False      # the id refers to the last photo, not a live track
 
 
+class RegionBody(BaseModel):
+    task: str
+    box: list[float]
+
+
 class BurstBody(BaseModel):
     task: str
     id: int
@@ -252,6 +257,35 @@ def create_app(tasks, cert_path=None, info=None):
         rows = await run(current.still, frame)
         return {"task": task, "rows": rows,
                 "w": int(frame.shape[1]), "h": int(frame.shape[0])}
+
+    @app.post("/api/region")
+    async def region(body: RegionBody):
+        """Photo mode: recognize a box the user drew where nothing was found."""
+        if len(body.box) != 4:
+            raise HTTPException(400, "box needs 4 numbers")
+        x1, y1, x2, y2 = body.box
+        if not (0 <= x1 < x2 <= 1 and 0 <= y1 < y2 <= 1):
+            raise HTTPException(400, "box must be normalised x1<x2, y1<y2 in 0..1")
+        try:
+            row = await run(task_of(body.task).region, body.box)
+        except LookupError as exc:
+            raise HTTPException(409, str(exc)) from None
+        return {"row": row}
+
+    @app.post("/api/follow")
+    async def follow(body: RegionBody):
+        """Resume live view tracking a box chosen or drawn on the paused photo."""
+        if len(body.box) != 4:
+            raise HTTPException(400, "box needs 4 numbers")
+        try:
+            tid = await run(task_of(body.task).follow, body.box)
+        except LookupError as exc:
+            raise HTTPException(409, str(exc)) from None
+        return {"id": tid}
+
+    @app.post("/api/unfollow")
+    async def unfollow(body: HoldBody):
+        return {"stopped": await run(task_of(body.task).unfollow, body.id)}
 
     @app.get("/api/memory")
     async def memory(task: str = "objects"):

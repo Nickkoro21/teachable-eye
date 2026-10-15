@@ -150,3 +150,12 @@ button.dot { padding: 0; }
 #diag { position: fixed; left: 8px; right: 8px; z-index: 6; top: calc(env(safe-area-inset-top) + 58px);
   background: #000c; color: #9ef0e2; font: 12px/1.35 ui-monospace, monospace; padding: 6px 8px;
   border-radius: 8px; overflow-wrap: anywhere; }
+
+/* 3-2-1 before a photo or a video teach */
+#count { position: fixed; inset: 0; z-index: 30; display: grid; place-items: center;
+  pointer-events: none; font-size: 160px; font-weight: 800; color: #fff;
+  text-shadow: 0 6px 30px #000c; animation: pop .9s ease-out; }
+@keyframes pop { from { transform: scale(1.6); opacity: 0; } 30% { opacity: 1; } to { transform: scale(1); } }
+/* front camera: mirror like a selfie camera (boxes are mirrored in code) */
+body.mirror #video, body.mirror #frozen { transform: scaleX(-1); }
+#overlay { touch-action: none; }

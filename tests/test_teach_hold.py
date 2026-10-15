@@ -1,5 +1,7 @@
 """TEACH holds the crop at press time (feedback from the second phone test:
 the object was lost while the user typed its name, so Save failed)."""
+import pathlib
+
 import numpy as np
 import pytest
 
@@ -126,3 +128,48 @@ def test_burst_still_view_is_one_view(task):
         task.process(frame, now=2.0 + i * 0.2)
     _, views = task.finish_burst(bid)
     assert views == 1
+
+
+def test_user_drawn_region_on_a_photo(task):
+    """Small things the detector misses (a gum on grass) can be marked."""
+    frame = np.full((200, 200, 3), 90, np.uint8)
+    frame[95:105, 95:105] = 220
+    with pytest.raises(LookupError):
+        task.region([0.4, 0.4, 0.6, 0.6])           # no photo yet
+    task.still(frame)
+    row = task.region([0.45, 0.45, 0.55, 0.55])
+    assert row["manual"] and row["decision"] == "unknown"
+    hid = task.hold(row["id"], from_still=True)
+    task.teach_held(hid, "gum")
+    assert task.memory.labels()[0]["label"] == "gum"
+
+
+VIT = (pathlib.Path(__file__).resolve().parents[1] / "data" / "models" / "opencv"
+       / "object_tracking_vittrack_2023sep.onnx")
+
+
+@pytest.mark.skipif(not VIT.exists(), reason="VitTrack model not downloaded")
+def test_follow_a_user_box_after_pause(task, monkeypatch):
+    """Pause, fix the box, resume: the tracker follows the user's box."""
+    from teachable_eye import follow
+    monkeypatch.setattr(follow, "_model", lambda: str(VIT))
+    task.detector.visible = False                 # the detector sees nothing
+    rng = np.random.default_rng(1)
+    bg = rng.integers(0, 60, (240, 320, 3), dtype=np.uint8)
+
+    def frame(x):
+        f = bg.copy()
+        f[100:130, x:x + 30] = (40, 200, 240)
+        return f
+
+    task.process(frame(50), now=1.0)              # live, sets the live size
+    task.still(frame(50))                         # pause
+    tid = task.follow([50 / 320, 100 / 240, 80 / 320, 130 / 240])
+    rows = []
+    for i in range(1, 8):                         # resume: it moves right
+        rows = task.process(frame(50 + i * 6), now=1.0 + i * 0.2)
+    row = next(r for r in rows if r["id"] == tid)
+    assert row["manual"]
+    assert abs(row["box"][0] - (50 + 7 * 6) / 320) < 0.04
+    hid = task.hold(tid)
+    assert task.teach_held(hid, "gum")

@@ -100,3 +100,7 @@ Recorded here so the spec matches the build (no drift):
 | Header and hint overflowed on a narrow phone | Compact icon header, wrapping hint, landing page with how-to, privacy note and language switch |
 | "How do I teach from video?" | **Teach from video (burst):** for 5 s, distinct views of the chosen track are collected (a view is kept only when cosine < 0.95 to all kept views, max 10), then named at once |
 | Phone connection | Tailscale Serve on :8443 (trusted certificate, works away from home); server bound to 127.0.0.1 |
+| A bag taught from afar was not recognized up close | Close-ups kept (max area 0.90); teach-time augmentation: hidden zoom/mirror/darker variants per view (faces: mirror/darker only) |
+| A gum on grass was not detected | Min area 0.0003; photos detected at 1280 px; on a photo, tap or drag anywhere to mark your own box |
+| "Pause, fix the box, and keep following it" | ⏸ Photo pauses; drag a box's corners to fix it; ▶ Live starts **VitTrack** (OpenCV Zoo, Apache-2.0) from that exact box; a detector box on the same object (IoU ≥ 0.5) is hidden; the track ends after 8 unsure frames |
+| Selfie camera, "is it working?" | ⟲ switches front/back camera (front is mirrored like a selfie camera); 3-2-1 countdown before a photo or a video teach |
