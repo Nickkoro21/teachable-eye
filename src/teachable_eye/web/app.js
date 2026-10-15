@@ -24,6 +24,7 @@ const I18N = {
     following: "Following your box.",
     labelAll: "Label all", labelAllShort: "All", labelAllHint: "Each number matches a box on the photo. Empty = skip.",
     skipPh: "(skip)", saveAll: "Save {0}", taughtMany: "Taught {0} labels.",
+    addBox: "+ New box: drag on the photo", drawNow: "Drag on the photo to draw the new box.",
     consentAll: "These people agreed to be remembered on this device.", noBoxes: "No boxes on this photo.",
     deleteViewConfirm: "Delete this view and its {0} variants?",
     augNote: "Each view also stores variants: zoom, mirror, darker (see Memory).",
@@ -60,6 +61,7 @@ const I18N = {
     following: "Ακολουθώ το πλαίσιό σου.",
     labelAll: "Ετικέτες σε όλα", labelAllShort: "Όλα", labelAllHint: "Κάθε αριθμός αντιστοιχεί σε πλαίσιο στη φωτογραφία. Κενό = παράλειψη.",
     skipPh: "(παράλειψη)", saveAll: "Αποθήκευση {0}", taughtMany: "Έμαθα {0} ετικέτες.",
+    addBox: "+ Νέο πλαίσιο: σύρε πάνω στη φωτογραφία", drawNow: "Σύρε πάνω στη φωτογραφία για το νέο πλαίσιο.",
     consentAll: "Τα πρόσωπα συμφώνησαν να τα θυμάται αυτή η συσκευή.", noBoxes: "Δεν υπάρχουν πλαίσια σε αυτή τη φωτογραφία.",
     deleteViewConfirm: "Διαγραφή αυτής της όψης και των {0} παραγώγων της;",
     augNote: "Κάθε όψη αποθηκεύει και παράγωγα: ζουμ, καθρέφτης, σκοτεινό (δες Μνήμη).",
@@ -693,29 +695,57 @@ async function openMulti() {
   state.multi = rows.map((r) => r.id);
   const list = $("multiList");
   list.innerHTML = "";
-  rows.forEach((r, i) => {
-    const row = document.createElement("div");
-    row.className = "mrow";
-    row.dataset.id = r.id;
-    const thumb = cropPreview(r.box);
-    const known = r.taught || r.decision === "known" ? r.label : "";
-    const hint = r.decision === "uncertain" && r.guess ? `${t("maybe")} ${r.guess}?` : t("skipPh");
-    row.innerHTML = `<span class="num">${i + 1}</span>
-      ${thumb ? `<img src="${thumb}" alt="">` : "<img alt=''>"}
-      <input list="labelOptions" autocomplete="off" maxlength="60"
-             value="${escapeHtml(known || "")}" placeholder="${escapeHtml(hint)}">`;
-    const focus = () => {
-      state.selected = r.id;
-      list.querySelectorAll(".mrow").forEach((m) => m.classList.toggle("on", m === row));
-    };
-    row.addEventListener("click", focus);
-    row.querySelector("input").addEventListener("focus", focus);
-    row.querySelector("input").addEventListener("input", updateMultiSave);
-    list.appendChild(row);
-  });
+  rows.forEach((r, i) => list.appendChild(multiRow(r, i)));
   $("multiConsentRow").hidden = state.task !== "people";
   $("multiConsent").checked = false;
   $("multi").hidden = false;
+  updateMultiSave();
+}
+
+// One list row per box. Selecting a row highlights its box on the photo,
+// where its corners can be dragged to fix it.
+function multiRow(r, i, value) {
+  const row = document.createElement("div");
+  row.className = "mrow";
+  row.dataset.id = r.id;
+  const thumb = cropPreview(r.box);
+  const known = value ?? (r.taught || r.decision === "known" ? r.label : "");
+  const hint = r.decision === "uncertain" && r.guess ? `${t("maybe")} ${r.guess}?` : t("skipPh");
+  row.innerHTML = `<span class="num">${i + 1}</span>
+    ${thumb ? `<img src="${thumb}" alt="">` : "<img alt=''>"}
+    <input list="labelOptions" autocomplete="off" maxlength="60"
+           value="${escapeHtml(known || "")}" placeholder="${escapeHtml(hint)}">`;
+  row.addEventListener("click", () => selectMultiRow(Number(row.dataset.id)));
+  row.querySelector("input").addEventListener("focus", () => selectMultiRow(Number(row.dataset.id)));
+  row.querySelector("input").addEventListener("input", updateMultiSave);
+  return row;
+}
+
+function selectMultiRow(id, scroll) {
+  state.selected = id;
+  $("multiList").querySelectorAll(".mrow").forEach((m) => {
+    const on = Number(m.dataset.id) === id;
+    m.classList.toggle("on", on);
+    if (on && scroll) m.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  });
+}
+
+// A box was fixed (replaces row `replaced`, keeping its number and text) or
+// drawn new (becomes the next number).
+function multiAdopt(row, replaced) {
+  const list = $("multiList");
+  const at = replaced != null ? state.multi.indexOf(replaced) : -1;
+  if (at >= 0) {
+    const old = list.querySelector(`.mrow[data-id="${replaced}"]`);
+    const typed = old ? old.querySelector("input").value : "";
+    state.multi[at] = row.id;
+    const fresh = multiRow(row, at, typed);
+    if (old) old.replaceWith(fresh); else list.appendChild(fresh);
+  } else {
+    state.multi.push(row.id);
+    list.appendChild(multiRow(row, state.multi.length - 1));
+  }
+  selectMultiRow(row.id, true);
   updateMultiSave();
 }
 
@@ -905,7 +935,7 @@ overlay.addEventListener("pointerdown", (ev) => {
       state.drag = { x0: opp[0], y0: opp[1], x1: x, y1: y, moved: true, edit: target.id };
     }
   }
-  overlay.setPointerCapture(ev.pointerId);
+  try { overlay.setPointerCapture(ev.pointerId); } catch { /* not all pointers can be captured */ }
 });
 overlay.addEventListener("pointermove", (ev) => {
   if (!state.drag) return;
@@ -923,12 +953,13 @@ overlay.addEventListener("pointerup", () => {
     }
     const a = toFrame(d.x0, d.y0), b = toFrame(d.x1, d.y1);
     markRegion([Math.min(a[0], b[0]), Math.min(a[1], b[1]),
-                Math.max(a[0], b[0]), Math.max(a[1], b[1])]);
+                Math.max(a[0], b[0]), Math.max(a[1], b[1])], d.edit);
     return;
   }
   const r = hitTest(d.x0, d.y0);
   if (r) {
     state.selected = r.id;
+    if (state.multi) selectMultiRow(r.id, true);
     if (navigator.vibrate) navigator.vibrate(15);
   } else if (state.still) {                        // empty spot on a photo
     const [fx, fy] = toFrame(d.x0, d.y0);
@@ -944,12 +975,13 @@ overlay.addEventListener("pointerup", () => {
   renderCard();
 });
 
-async function markRegion(box) {
+async function markRegion(box, replaced) {
   if (box[2] - box[0] < 0.005 || box[3] - box[1] < 0.005) return;
   try {
     const res = await api("/api/region", { task: state.task, box });
     state.still.rows.push(res.row);
     state.selected = res.row.id;
+    if (state.multi) multiAdopt(res.row, replaced);
     if (navigator.vibrate) navigator.vibrate(15);
     renderCard(); updateHint();
   } catch (err) { toast(err.message, 4000); }
@@ -960,6 +992,7 @@ $("homeBtn").onclick = goHome;
 $("flipBtn").onclick = flipCamera;
 $("labelAllBtn").onclick = openMulti;
 $("multiCancel").onclick = closeMulti;
+$("multiAdd").onclick = () => toast(t("drawNow"), 3500);
 $("multiForm").onsubmit = saveMulti;
 $("teachBtn").onclick = teachSelected;
 $("videoBtn").onclick = startBurst;

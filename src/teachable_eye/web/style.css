@@ -146,7 +146,11 @@ button { font: inherit; color: inherit; border: 0; cursor: pointer; }
   top: calc(env(safe-area-inset-top) + 62px); background: #000e; padding: 10px 16px;
   border-radius: 12px; text-align: center; overflow-wrap: anywhere; }
 /* label all (R32): photo stays visible above the list */
-.sheet.multi { background: #0006; }
+/* the photo above the list stays touchable: fix corners, draw new boxes */
+.sheet.multi { background: transparent; pointer-events: none; }
+.sheet.multi form { pointer-events: auto; box-shadow: 0 -10px 30px #0008; }
+.addbox { padding: 10px; border-radius: 12px; background: #f59e0b22; color: #fcd34d;
+  border: 1px dashed #f59e0b88; }
 .sheet.multi form { max-height: 52vh; }
 #multiList { display: flex; flex-direction: column; gap: 8px; overflow-y: auto; }
 .mrow { display: flex; align-items: center; gap: 10px; padding: 6px; border-radius: 12px;

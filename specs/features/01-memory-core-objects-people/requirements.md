@@ -65,3 +65,4 @@
 - **R30**: Every variant has its own thumbnail and is listed under its view in Memory; deleting a view deletes its variants, a single variant can be deleted alone, and forgetting removes thumbnail files from disk too.
 - **R31**: The teach sheet matches existing labels ignoring case and accents (ποτήρι = ποτηρι).
 - **R32** *(done 2026-10-15)*: On a paused photo, label several boxes at once: a list of every box with its own label field (existing-label chooser, pre-filled from memory, empty = skip) and a single Save that teaches them all, each with its variants.
+- **R33**: In "Label all" the photo stays touchable: selecting a row highlights its box, whose corners can be dragged to fix it (the row keeps its number and typed name); dragging on empty space adds a new box as the next numbered row.
