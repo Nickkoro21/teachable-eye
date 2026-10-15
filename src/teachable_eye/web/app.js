@@ -10,7 +10,7 @@ const I18N = {
     live: "Live", teach: "TEACH", teachTitle: "Name this", save: "Save",
     cancel: "Cancel", labelObject: "e.g. hat", labelPerson: "e.g. person-a",
     consent: "This person agreed to be remembered on this device.",
-    hintTap: "Aim the circle at an object (or tap its box), then TEACH.",
+    hintTap: "Tap a box to choose it (tap again for the next one under your finger), then TEACH.",
     hintNone: "Point the camera at something.",
     known: "known", uncertain: "uncertain", unknown: "unknown", pending: "looking…",
     maybe: "maybe", views: "views", rename: "Rename", forget: "Forget",
@@ -27,7 +27,7 @@ const I18N = {
     live: "Ζωντανά", teach: "ΜΑΘΕ", teachTitle: "Δώσε όνομα", save: "Αποθήκευση",
     cancel: "Άκυρο", labelObject: "π.χ. καπέλο", labelPerson: "π.χ. person-a",
     consent: "Το πρόσωπο συμφώνησε να το θυμάται αυτή η συσκευή.",
-    hintTap: "Στόχευσε με τον κύκλο (ή πάτα το πλαίσιο) και μετά ΜΑΘΕ.",
+    hintTap: "Πάτα ένα πλαίσιο για να το διαλέξεις (ξαναπάτα για το επόμενο) και μετά ΜΑΘΕ.",
     hintNone: "Στόχευσε την κάμερα σε κάτι.",
     known: "γνωστό", uncertain: "αβέβαιο", unknown: "άγνωστο", pending: "κοιτάζω…",
     maybe: "ίσως", views: "όψεις", rename: "Μετονομασία", forget: "Ξέχνα",
@@ -230,15 +230,23 @@ function draw() {
     if (target && r.id === target.id) continue;            // drawn last, on top
     const [x, y, w, h] = map(r.box);
     const named = r.decision === "known" || r.decision === "uncertain";
-    if (!named) {                                            // quiet: no label
-      ctx.strokeStyle = "#ffffff55"; ctx.lineWidth = 1; ctx.setLineDash([4, 6]);
+    if (named) {
+      const color = COLORS[r.decision];
+      ctx.strokeStyle = color; ctx.lineWidth = 2;
+      ctx.strokeRect(x, y, w, h);
+      chip(caption(r), x, y, color, topLimit);
+    } else if (r.background) {                 // table, wall: visible but thin
+      ctx.strokeStyle = "#ffffff66"; ctx.lineWidth = 1; ctx.setLineDash([5, 5]);
       ctx.strokeRect(x, y, w, h); ctx.setLineDash([]);
-      continue;
+    } else {                                   // unnamed object: clear, tappable
+      ctx.strokeStyle = "#ffffffcc"; ctx.lineWidth = 2;
+      ctx.setLineDash(r.decision === "pending" ? [6, 5] : []);
+      ctx.strokeRect(x, y, w, h); ctx.setLineDash([]);
+      ctx.fillStyle = "#ffffffcc";
+      ctx.beginPath(); ctx.arc(x + w - 2, y + 2, 11, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = "#0b1220"; ctx.textAlign = "center";
+      ctx.fillText("?", x + w - 2, y - 6); ctx.textAlign = "left";
     }
-    const color = COLORS[r.decision];
-    ctx.strokeStyle = color; ctx.lineWidth = 2;
-    ctx.strokeRect(x, y, w, h);
-    chip(caption(r), x, y, color, topLimit);
   }
   if (target) {
     const [x, y, w, h] = map(target.box);
@@ -251,19 +259,25 @@ function draw() {
   }
 }
 
+// Every box under the finger, smallest first. Tapping the same spot again
+// steps to the next one, so a lighter on a table and the table itself are
+// both reachable.
 function hitTest(px, py) {
   const src = source();
   const map = mapper(src.w, src.h);
   const pad = 24;                       // fingers are bigger than small boxes
-  let best = null, bestArea = Infinity;
+  const under = [];
   for (const r of src.rows) {
-    if (r.background) continue;
     const [x, y, w, h] = map(r.box);
-    if (px >= x - pad && px <= x + w + pad && py >= y - pad && py <= y + h + pad && w * h < bestArea) {
-      best = r; bestArea = w * h;
+    if (px >= x - pad && px <= x + w + pad && py >= y - pad && py <= y + h + pad) {
+      under.push([w * h, r]);
     }
   }
-  return best;
+  if (!under.length) return null;
+  under.sort((a, b) => a[0] - b[0]);
+  const rows = under.map(([, r]) => r);
+  const at = rows.findIndex((r) => r.id === state.selected);
+  return at >= 0 ? rows[(at + 1) % rows.length] : rows[0];
 }
 
 function currentTarget() {
