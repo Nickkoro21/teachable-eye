@@ -296,8 +296,8 @@ class VisualTask:
                     ids.append(pid)
                     if augs:
                         variants = [fn(c) for fn in augs]
-                        for fn, v in zip(augs, self.embed(variants)):
-                            self.memory.teach(v, label, thumb=thumb,
+                        for fn, img, v in zip(augs, variants, self.embed(variants)):
+                            self.memory.teach(v, label, thumb=self._save_thumb(img),
                                               source=self.source, parent=pid,
                                               aug=fn.__name__)
             except ValueError:
@@ -389,6 +389,20 @@ class VisualTask:
     def _thumb_bytes(self, crop):
         return cv2.imencode(".jpg", self._small(crop),
                             [cv2.IMWRITE_JPEG_QUALITY, 80])[1].tobytes()
+
+    def gc_thumbs(self):
+        """Delete thumbnail files no memory point refers to any more.
+
+        Forgetting must remove the pictures too, not only the vectors
+        (mission principle 5: people can be forgotten completely).
+        """
+        in_use = self.memory.thumbs_in_use()
+        removed = 0
+        for path in self.thumbs.glob("*.jpg"):
+            if path.name not in in_use:
+                path.unlink(missing_ok=True)
+                removed += 1
+        return removed
 
     def _save_thumb(self, crop):
         name = f"{uuid.uuid4().hex}.jpg"

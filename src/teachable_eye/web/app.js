@@ -22,6 +22,9 @@ const I18N = {
     hintNone: "Point the camera at something.", hintPeopleNone: "Point the camera at a face.",
     hintPhoto: "Paused: tap a box, drag its corners to fix it, or drag anywhere for a new one. TEACH, or ▶ Live to follow it.",
     following: "Following your box.",
+    deleteViewConfirm: "Delete this view and its {0} variants?",
+    augNote: "Each view also stores variants: zoom, mirror, darker (see Memory).",
+    aug_zoom_center: "zoom", aug_flip: "mirror", aug_darker: "darker", variant: "variant",
     liveTapHint: "Nothing there. Take a Photo to mark your own box.",
     known: "known", uncertain: "uncertain", unknown: "unknown", pending: "looking…",
     maybe: "maybe", views: "views", rename: "Rename", forget: "Forget",
@@ -52,6 +55,9 @@ const I18N = {
     hintNone: "Στόχευσε την κάμερα σε κάτι.", hintPeopleNone: "Στόχευσε την κάμερα σε ένα πρόσωπο.",
     hintPhoto: "Παύση: πάτα ένα πλαίσιο, σύρε τις γωνίες του για διόρθωση ή σύρε οπουδήποτε για νέο. ΜΑΘΕ, ή ▶ Ζωντανά για να το ακολουθήσει.",
     following: "Ακολουθώ το πλαίσιό σου.",
+    deleteViewConfirm: "Διαγραφή αυτής της όψης και των {0} παραγώγων της;",
+    augNote: "Κάθε όψη αποθηκεύει και παράγωγα: ζουμ, καθρέφτης, σκοτεινό (δες Μνήμη).",
+    aug_zoom_center: "ζουμ", aug_flip: "καθρέφτης", aug_darker: "σκοτεινό", variant: "παράγωγο",
     liveTapHint: "Δεν υπάρχει κάτι εκεί. Πάτα Φωτό για να σημειώσεις δικό σου πλαίσιο.",
     known: "γνωστό", uncertain: "αβέβαιο", unknown: "άγνωστο", pending: "κοιτάζω…",
     maybe: "ίσως", views: "όψεις", rename: "Μετονομασία", forget: "Ξέχνα",
@@ -71,6 +77,10 @@ const MAX_SIDE = 960;          // live frames sent to the PC
 const STILL_SIDE = 1920;       // photo mode
 const MIN_INTERVAL_MS = 150;   // ~6 fps ceiling
 const VIDEO_SECONDS = 5;
+// teach-time augmentation variants (see tasks.AUGMENT on the server)
+const AUG_ICON = { zoom_center: "🔍", flip: "⇋", darker: "◐" };
+function augName(aug) { return aug ? t(`aug_${aug}`) : ""; }
+
 const COLORS = { known: "#14b8a6", uncertain: "#f59e0b", unknown: "#94a3b8", pending: "#e8eefc" };
 
 const $ = (id) => document.getElementById(id);
@@ -462,7 +472,7 @@ function renderCard() {
   const name = r.label || (r.guess ? `${t("maybe")} ${r.guess}?` : t("unknown"));
   const nbrs = (r.neighbours || []).map((n) => `
     <div class="nbr">${n.thumb ? `<img src="/thumb/${state.task}/${n.thumb}" alt="">` : ""}
-      ${escapeHtml(n.label)}<br>${n.score.toFixed(2)}</div>`).join("");
+      ${escapeHtml(n.label)}<br>${n.score.toFixed(2)}${n.aug ? ` ${AUG_ICON[n.aug] || ""}` : ""}</div>`).join("");
   card.innerHTML = `<div class="head"><span class="dec" style="color:${COLORS[r.decision]}">
       ${escapeHtml(name)}</span><small>${t(r.decision)} · ${r.score.toFixed(2)}</small></div>
     ${nbrs ? `<small>${t("nearest")}</small><div class="nbrs">${nbrs}</div>` : ""}`;
@@ -608,14 +618,23 @@ async function loadChoices(r) {
 }
 
 // Highlight the chip matching the typed name and filter the rest.
+// Accents and case do not make a different thing: «ποτήρι» = «ποτηρι».
+function fold(text) {
+  return text.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase().replace(/\s+/g, " ").trim();
+}
+
 function markChoice() {
-  const typed = $("labelInput").value.trim().toLowerCase().replace(/\s+/g, " ");
+  const raw = $("labelInput").value.trim().toLowerCase().replace(/\s+/g, " ");
+  const typed = fold(raw);
   let exact = false;
   document.querySelectorAll("#choices .choice").forEach((c) => {
-    const on = c.dataset.label === typed;
+    const label = fold(c.dataset.label);
+    const on = label === typed;
     exact = exact || on;
     c.classList.toggle("on", on);
-    c.hidden = typed && !on && !c.dataset.label.includes(typed);
+    c.hidden = typed && !on && !label.includes(typed);
+    // same word typed with other accents: use the existing label as stored
+    if (on && c.dataset.label !== raw) $("labelInput").value = c.dataset.label;
   });
   $("saveBtn").textContent = typed && !exact ? `${t("save")} · ${t("newLabel")}` : t("save");
 }
@@ -721,8 +740,16 @@ async function renderMemory() {
         </div>
       </div>
       <div class="views">${g.examples.map((e) => `
-        <div class="view">${e.thumb ? `<img src="/thumb/${state.task}/${e.thumb}" alt="">` : "<img alt=''>"}
-          <button data-del="${e.id}" aria-label="delete view">✕</button></div>`).join("")}</div>`;
+        <div class="view-group">
+          <div class="view">${e.thumb ? `<img src="/thumb/${state.task}/${e.thumb}" alt="">` : "<img alt=''>"}
+            <button data-del="${e.id}" data-n="${(e.variants || []).length}" aria-label="delete view">✕</button></div>
+          ${(e.variants || []).length ? `<div class="variants">${e.variants.map((v) => `
+            <div class="variant" title="${escapeHtml(augName(v.aug))}">
+              ${v.thumb ? `<img src="/thumb/${state.task}/${v.thumb}" alt="">` : "<img alt=''>"}
+              <span class="tag">${AUG_ICON[v.aug] || "＋"}</span>
+              <button data-del="${v.id}" data-variant="1" aria-label="delete variant">✕</button></div>`).join("")}
+          </div>` : ""}
+        </div>`).join("")}</div>`;
     item.querySelector('[data-act="rename"]').onclick = async () => {
       const to = prompt(t("renamePrompt", g.label), g.label);
       if (to && to.trim() && to.trim() !== g.label) {
@@ -738,6 +765,9 @@ async function renderMemory() {
     };
     item.querySelectorAll("[data-del]").forEach((b) => {
       b.onclick = async () => {
+        // a main view takes its variants with it; say so before deleting
+        const n = Number(b.dataset.n || 0);
+        if (!b.dataset.variant && n && !confirm(t("deleteViewConfirm", n))) return;
         await api("/api/forget_example", { task: state.task, id: b.dataset.del });
         renderMemory();
       };

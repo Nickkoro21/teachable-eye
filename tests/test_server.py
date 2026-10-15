@@ -20,6 +20,9 @@ class FakeTask:
     def reset(self):
         self.resets += 1
 
+    def gc_thumbs(self):
+        return 0
+
     def process(self, frame):
         return [{"id": 1, "box": [0.1, 0.2, 0.5, 0.6], "focus": True,
                  "decision": "unknown", "label": None, "guess": None,

@@ -62,3 +62,5 @@
 - **R27**: On a paused photo the user can mark a box (tap or drag) or resize a box by its corners; the box is recognized and can be taught.
 - **R28**: Resuming live view follows the chosen/fixed box with a single-object tracker (VitTrack) started from that box; it replaces an overlapping detector box and ends after 8 low-confidence frames.
 - **R29**: Front/back camera switch; 3-2-1 countdown before a photo or a video teach.
+- **R30**: Every variant has its own thumbnail and is listed under its view in Memory; deleting a view deletes its variants, a single variant can be deleted alone, and forgetting removes thumbnail files from disk too.
+- **R31**: The teach sheet matches existing labels ignoring case and accents (ποτήρι = ποτηρι).

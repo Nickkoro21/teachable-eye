@@ -18,6 +18,7 @@ class Neighbour:
     label: str
     score: float
     thumb: str | None = None
+    aug: str | None = None        # set when the best match was a variant
 
 
 @dataclass
@@ -36,7 +37,7 @@ class Decision:
             "score": round(self.score, 4),
             "neighbours": [
                 {"id": n.id, "label": n.label, "score": round(n.score, 4),
-                 "thumb": n.thumb} for n in self.neighbours
+                 "thumb": n.thumb, "aug": n.aug} for n in self.neighbours
             ],
         }
 

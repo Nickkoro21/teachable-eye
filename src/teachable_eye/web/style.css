@@ -159,3 +159,17 @@ button.dot { padding: 0; }
 /* front camera: mirror like a selfie camera (boxes are mirrored in code) */
 body.mirror #video, body.mirror #frozen { transform: scaleX(-1); }
 #overlay { touch-action: none; }
+
+/* memory: each taught view with its augmented variants underneath */
+.views { flex-direction: column; flex-wrap: nowrap; }
+.view-group { display: flex; align-items: center; gap: 10px; background: #ffffff0a;
+  border-radius: 12px; padding: 6px; }
+.variants { display: flex; gap: 6px; flex-wrap: wrap; }
+.variant { position: relative; }
+.variant img { width: 44px; height: 44px; object-fit: cover; border-radius: 8px; background: #000;
+  display: block; opacity: .9; }
+.variant .tag { position: absolute; left: 2px; bottom: 2px; font-size: 11px; line-height: 1;
+  background: #0b1220cc; border-radius: 6px; padding: 2px 3px; }
+.variant button { position: absolute; top: -6px; right: -6px; width: 20px; height: 20px;
+  border-radius: 50%; background: #ef4444cc; font-size: 11px; line-height: 20px; padding: 0; }
+.augnote { font-size: 12px; opacity: .8; }

@@ -173,3 +173,25 @@ def test_follow_a_user_box_after_pause(task, monkeypatch):
     assert abs(row["box"][0] - (50 + 7 * 6) / 320) < 0.04
     hid = task.hold(tid)
     assert task.teach_held(hid, "gum")
+
+
+def test_variants_have_own_thumbs_and_go_with_their_view(task):
+    """Augmented variants are visible per view; deleting a view deletes them
+    and their thumbnail files (people must be forgettable completely)."""
+    task.process(np.zeros((100, 100, 3), np.uint8), now=1.0)
+    task.teach_held(task.hold(7), "bag")
+    view = task.memory.labels()[0]["examples"][0]
+    names = sorted(v["aug"] for v in view["variants"])
+    assert names == ["darker", "flip", "zoom_center"]
+    thumbs = {view["thumb"]} | {v["thumb"] for v in view["variants"]}
+    assert len(thumbs) == 4                                  # each has its own
+    assert all((task.thumbs / name).exists() for name in thumbs)
+    # one variant can go on its own
+    task.memory.forget_example(view["variants"][0]["id"])
+    task.gc_thumbs()
+    assert len(task.memory.labels()[0]["examples"][0]["variants"]) == 2
+    # the main view takes the rest with it, files included
+    task.memory.forget_example(view["id"])
+    assert task.gc_thumbs() >= 3
+    assert task.memory.count() == 0
+    assert not any(task.thumbs.glob("*.jpg"))

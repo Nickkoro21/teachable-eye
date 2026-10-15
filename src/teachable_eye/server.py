@@ -301,17 +301,27 @@ def create_app(tasks, cert_path=None, info=None):
             raise HTTPException(400, str(exc)) from None
         return {"changed": n}
 
+    # Forgetting removes vectors AND thumbnail files (gc_thumbs).
     @app.post("/api/forget")
     async def forget(body: LabelBody):
-        return {"deleted": task_of(body.task).memory.forget_label(body.label)}
+        task = task_of(body.task)
+        n = task.memory.forget_label(body.label)
+        await run(task.gc_thumbs)
+        return {"deleted": n}
 
     @app.post("/api/forget_example")
     async def forget_example(body: ExampleBody):
-        return {"deleted": task_of(body.task).memory.forget_example(body.id)}
+        """Delete one view (with its variants) or one variant on its own."""
+        task = task_of(body.task)
+        n = task.memory.forget_example(body.id)
+        await run(task.gc_thumbs)
+        return {"deleted": n}
 
     @app.post("/api/wipe")
     async def wipe(body: TaskBody):
-        await run(task_of(body.task).memory.wipe)
+        task = task_of(body.task)
+        await run(task.memory.wipe)
+        await run(task.gc_thumbs)
         return {"ok": True}
 
     @app.get("/thumb/{task}/{name}")

@@ -157,7 +157,8 @@ class TaskMemory:
                 continue
             seen.add(root)
             neighbours.append(Neighbour(root, h.payload.get("label", ""),
-                                        float(h.score), h.payload.get("thumb")))
+                                        float(h.score), h.payload.get("thumb"),
+                                        h.payload.get("aug")))
             if len(neighbours) == k:
                 break
         return decide(neighbours, self.thresholds)
@@ -174,8 +175,17 @@ class TaskMemory:
         with self._lock:
             records, _ = self.shard.scroll(ScrollRequest(
                 limit=SCAN_LIMIT, with_payload=True))
-        rows = [dict(r.payload, id=str(r.id)) for r in records
-                if not r.payload.get("parent")]
+        variants = {}
+        for r in records:
+            parent = r.payload.get("parent")
+            if parent:
+                variants.setdefault(parent, []).append(
+                    {"id": str(r.id), "aug": r.payload.get("aug"),
+                     "thumb": r.payload.get("thumb")})
+        rows = [dict(r.payload, id=str(r.id),
+                     variants=sorted(variants.get(str(r.id), []),
+                                     key=lambda v: v["aug"] or ""))
+                for r in records if not r.payload.get("parent")]
         rows.sort(key=lambda r: r.get("ts") or 0, reverse=True)
         return rows
 
@@ -186,6 +196,13 @@ class TaskMemory:
             groups.setdefault(row["label"], []).append(row)
         return [{"label": label, "count": len(rows), "examples": rows}
                 for label, rows in groups.items()]
+
+    def thumbs_in_use(self):
+        """Every thumbnail file name still referenced by a point."""
+        with self._lock:
+            records, _ = self.shard.scroll(ScrollRequest(
+                limit=SCAN_LIMIT, with_payload=True))
+        return {r.payload.get("thumb") for r in records if r.payload.get("thumb")}
 
     def _ids_of(self, label):
         with self._lock:
