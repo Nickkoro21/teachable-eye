@@ -95,7 +95,12 @@ Observations from phone tests to carry forward:
   flow for speed/direction; camera-motion compensation; SSIM gate to skip identical frames.
 - **Tracking upgrades for aircraft**: ByteTrack / OC-SORT + Kalman smoothing → trajectory vectors;
   SAM 2 for precise masks.
-- Encoder comparison: SigLIP / DINOv2 vs CLIP ViT-B/32 (measured with the TG5 tool).
+- Encoder comparison: SigLIP 2 / DINOv2 / larger CLIP vs CLIP ViT-B/32 (measured with the TG5 tool).
+- **Keep the taught crops** (e.g. 384 px, local only) next to the 160 px thumbnails, so memory can be
+  re-embedded when the encoder changes, instead of re-teaching everything (vectors of different
+  encoders are not comparable).
+- Model size ladder per platform: PC GPU (large/base) now; phone on-device later needs small/nano
+  variants (e.g. YOLOE-S, MobileCLIP) — decided by the same evaluation.
 
 ## Open questions
 - Will the phone or camera always stand at the **same position**? (affects trajectory calibration)
