@@ -71,10 +71,14 @@ Observations from phone tests to carry forward:
 - Labels differing only by accent (`ποτήρι` / `ποτηρι`) existed; merge by renaming one onto the other.
 
 ## Next steps (in order)
-1. TG5 evaluation tool + calibrate thresholds on the author's phone photos (`<label>_<n>.jpg` in `data/`).
-2. TG7 voice teach (EN/EL).
-3. Validation sign-off, SDD deep review (sub-agents), merge feature 01 into `main`, changelog.
-4. Replan: licence review of the detector (see tech-stack), then Phase 2 (video file import + aircraft
+1. **Multi-label a photo** (requested 2026-10-15, R32): on a paused photo, "Label all" lists every box
+   (detected and user-drawn) with a thumbnail and a label field each (existing-label chooser,
+   pre-filled when memory already knows it, empty = skip); tapping a row highlights its box; one
+   Save teaches all (each with its variants). Built on the existing per-box hold.
+2. TG5 evaluation tool + calibrate thresholds on the author's phone photos (`<label>_<n>.jpg` in `data/`).
+3. TG7 voice teach (EN/EL).
+4. Validation sign-off, SDD deep review (sub-agents), merge feature 01 into `main`, changelog.
+5. Replan: licence review of the detector (see tech-stack), then Phase 2 (video file import + aircraft
    detection/tracking spike on the first phone clips).
 
 ## Backlog / ideas (research before scheduling)

@@ -64,3 +64,4 @@
 - **R29**: Front/back camera switch; 3-2-1 countdown before a photo or a video teach.
 - **R30**: Every variant has its own thumbnail and is listed under its view in Memory; deleting a view deletes its variants, a single variant can be deleted alone, and forgetting removes thumbnail files from disk too.
 - **R31**: The teach sheet matches existing labels ignoring case and accents (ποτήρι = ποτηρι).
+- **R32** *(planned)*: On a paused photo, label several boxes at once: a list of every box with its own label field (existing-label chooser, pre-filled from memory, empty = skip) and a single Save that teaches them all, each with its variants.
