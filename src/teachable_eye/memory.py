@@ -53,7 +53,16 @@ class TaskMemory:
 
     def _open(self):
         if (self.dir / "edge_config.json").exists():
-            return EdgeShard.load(str(self.dir))
+            try:
+                return EdgeShard.load(str(self.dir))
+            except Exception as exc:
+                if "WouldBlock" in str(exc):
+                    # Qdrant Edge allows one open shard per directory.
+                    raise SystemExit(
+                        f"memory {self.dir} is already open in another "
+                        "teachable-eye process; stop it first or set "
+                        "TEYE_DATA_DIR to a different folder") from None
+                raise
         self.dir.mkdir(parents=True, exist_ok=True)
         shard = EdgeShard.create(str(self.dir), EdgeConfig(vectors={
             VECTOR: EdgeVectorParams(size=self.dim, distance=Distance.Cosine),

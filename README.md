@@ -4,7 +4,7 @@
 
 Built on [Qdrant Edge](https://qdrant.tech/documentation/edge/) as an application and extension of the DeepLearning.AI × Qdrant course *Building AI Assistants with On-Device Memory*.
 
-> **Status:** Phase 0 — constitution and repository setup. No application code yet.
+> **Status:** Phase 1 in progress — objects from the phone work (milestone A); people, evaluation and voice are next.
 
 ## Goal
 
@@ -37,13 +37,30 @@ The system **assists** an observer; it never replaces one. The dangerous error (
 
 Each feature is delivered as `specs/features/NN-name/{feature-plan,requirements,validation}.md` → implementation on a feature branch → validation.
 
-## Development setup
+## Run it (PC + Android phone)
+
+Requirements: Windows/Linux PC with an NVIDIA GPU (CPU works, slower), [uv](https://docs.astral.sh/uv/), an Android phone with Chrome on the **same Wi-Fi**.
+
+```powershell
+uv sync
+uv run teachable-eye --host 0.0.0.0          # add --advertise <PC-LAN-IP> if the printed IP is wrong
+```
+
+1. Open the printed `https://<pc-ip>:8765` in Chrome on the phone and accept the certificate warning (or install `/cert.crt` once to remove it).
+2. Allow the camera. Point at an object, tap its box, press **TEACH**, type a name.
+3. Show it again from another angle — the label appears. Untaught things stay `unknown`.
+
+Windows: the firewall must allow Python on the network the phone uses (a Wi-Fi marked *Public* blocks it unless allowed there).
+Everything the app learns stays in `data/` on the PC (git-ignored).
+
+## Development
 
 ```powershell
 git config core.hooksPath .githooks   # enable the no-media pre-commit check
+uv run pytest                         # fast tests (no models)
 ```
 
-The check can also be run by hand: `python tools/check_no_media.py --all`.
+The no-media check can also be run by hand: `python tools/check_no_media.py --all`.
 
 ## Acknowledgements
 
