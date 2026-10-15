@@ -10,7 +10,7 @@ const I18N = {
     live: "Live", teach: "TEACH", teachTitle: "Name this", save: "Save",
     cancel: "Cancel", labelObject: "e.g. hat", labelPerson: "e.g. person-a",
     consent: "This person agreed to be remembered on this device.",
-    hintTap: "Tap a box to select it, then TEACH.",
+    hintTap: "Aim the circle at an object (or tap its box), then TEACH.",
     hintNone: "Point the camera at something.",
     known: "known", uncertain: "uncertain", unknown: "unknown", pending: "looking…",
     maybe: "maybe", views: "views", rename: "Rename", forget: "Forget",
@@ -27,7 +27,7 @@ const I18N = {
     live: "Ζωντανά", teach: "ΜΑΘΕ", teachTitle: "Δώσε όνομα", save: "Αποθήκευση",
     cancel: "Άκυρο", labelObject: "π.χ. καπέλο", labelPerson: "π.χ. person-a",
     consent: "Το πρόσωπο συμφώνησε να το θυμάται αυτή η συσκευή.",
-    hintTap: "Πάτα ένα πλαίσιο και μετά ΜΑΘΕ.",
+    hintTap: "Στόχευσε με τον κύκλο (ή πάτα το πλαίσιο) και μετά ΜΑΘΕ.",
     hintNone: "Στόχευσε την κάμερα σε κάτι.",
     known: "γνωστό", uncertain: "αβέβαιο", unknown: "άγνωστο", pending: "κοιτάζω…",
     maybe: "ίσως", views: "όψεις", rename: "Μετονομασία", forget: "Ξέχνα",
@@ -177,6 +177,31 @@ function caption(r) {
   return t("unknown");
 }
 
+function source() {
+  return state.still || { rows: state.rows, w: video.videoWidth || state.frameW,
+                          h: video.videoHeight || state.frameH };
+}
+
+function chip(text, x, y, color, topLimit) {
+  const tw = ctx.measureText(text).width + 14;
+  let ty = y - 28;
+  if (ty < topLimit) ty = y + 4;            // keep it out from under the top bar
+  ctx.fillStyle = color;
+  ctx.beginPath(); ctx.roundRect(x, ty, tw, 26, 7); ctx.fill();
+  ctx.fillStyle = "#0b1220";
+  ctx.fillText(text, x + 7, ty + 5);
+}
+
+function corners(x, y, w, h, color) {
+  const l = Math.max(12, Math.min(28, Math.min(w, h) / 3));
+  ctx.strokeStyle = color; ctx.lineWidth = 6; ctx.lineCap = "round";
+  ctx.beginPath();
+  for (const [cx, cy, dx, dy] of [[x, y, 1, 1], [x + w, y, -1, 1], [x, y + h, 1, -1], [x + w, y + h, -1, -1]]) {
+    ctx.moveTo(cx, cy + dy * l); ctx.lineTo(cx, cy); ctx.lineTo(cx + dx * l, cy);
+  }
+  ctx.stroke();
+}
+
 function draw() {
   const dpr = window.devicePixelRatio || 1;
   const cw = overlay.clientWidth, ch = overlay.clientHeight;
@@ -185,37 +210,56 @@ function draw() {
   }
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, cw, ch);
-  const src = state.still || { rows: state.rows, w: video.videoWidth || state.frameW, h: video.videoHeight || state.frameH };
+  const topLimit = $("top").offsetHeight + 4;
+  if (!state.still) {                        // aim reticle
+    ctx.strokeStyle = "#ffffffb0"; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(cw / 2, ch / 2, 14, 0, Math.PI * 2);
+    ctx.moveTo(cw / 2 - 24, ch / 2); ctx.lineTo(cw / 2 - 8, ch / 2);
+    ctx.moveTo(cw / 2 + 8, ch / 2); ctx.lineTo(cw / 2 + 24, ch / 2);
+    ctx.moveTo(cw / 2, ch / 2 - 24); ctx.lineTo(cw / 2, ch / 2 - 8);
+    ctx.moveTo(cw / 2, ch / 2 + 8); ctx.lineTo(cw / 2, ch / 2 + 24);
+    ctx.stroke();
+  }
+  const src = source();
   if (!src.rows.length) return;
   const map = mapper(src.w, src.h);
+  const target = currentTarget();
   ctx.font = "600 15px system-ui, sans-serif";
   ctx.textBaseline = "top";
   for (const r of src.rows) {
+    if (target && r.id === target.id) continue;            // drawn last, on top
     const [x, y, w, h] = map(r.box);
-    const color = COLORS[r.decision] || COLORS.unknown;
-    const sel = r.id === state.selected || (state.selected == null && r.focus);
-    ctx.lineWidth = sel ? 4 : 2;
-    ctx.strokeStyle = color;
-    ctx.setLineDash(r.decision === "pending" ? [6, 6] : []);
+    const named = r.decision === "known" || r.decision === "uncertain";
+    if (!named) {                                            // quiet: no label
+      ctx.strokeStyle = "#ffffff55"; ctx.lineWidth = 1; ctx.setLineDash([4, 6]);
+      ctx.strokeRect(x, y, w, h); ctx.setLineDash([]);
+      continue;
+    }
+    const color = COLORS[r.decision];
+    ctx.strokeStyle = color; ctx.lineWidth = 2;
     ctx.strokeRect(x, y, w, h);
-    ctx.setLineDash([]);
-    const text = caption(r);
-    const tw = ctx.measureText(text).width + 12;
-    const ty = y > 26 ? y - 26 : y + 2;
-    ctx.fillStyle = color;
-    ctx.fillRect(x, ty, tw, 24);
-    ctx.fillStyle = "#0b1220";
-    ctx.fillText(text, x + 6, ty + 4);
+    chip(caption(r), x, y, color, topLimit);
+  }
+  if (target) {
+    const [x, y, w, h] = map(target.box);
+    const color = target.decision === "pending" || target.decision === "unknown"
+      ? "#ffffff" : COLORS[target.decision];
+    ctx.fillStyle = "#ffffff14"; ctx.fillRect(x, y, w, h);
+    ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.strokeRect(x, y, w, h);
+    corners(x, y, w, h, color);
+    chip(`◎ ${caption(target)}`, x, y, color, topLimit);
   }
 }
 
 function hitTest(px, py) {
-  const src = state.still || { rows: state.rows, w: video.videoWidth || state.frameW, h: video.videoHeight || state.frameH };
+  const src = source();
   const map = mapper(src.w, src.h);
+  const pad = 24;                       // fingers are bigger than small boxes
   let best = null, bestArea = Infinity;
   for (const r of src.rows) {
+    if (r.background) continue;
     const [x, y, w, h] = map(r.box);
-    if (px >= x && px <= x + w && py >= y && py <= y + h && w * h < bestArea) {
+    if (px >= x - pad && px <= x + w + pad && py >= y - pad && py <= y + h + pad && w * h < bestArea) {
       best = r; bestArea = w * h;
     }
   }
@@ -223,15 +267,15 @@ function hitTest(px, py) {
 }
 
 function currentTarget() {
-  const rows = state.still ? state.still.rows : state.rows;
+  const rows = source().rows;
   return rows.find((r) => r.id === state.selected) || rows.find((r) => r.focus) || null;
 }
 
 function renderCard() {
   const card = $("card");
-  const r = state.selected != null ? currentTarget() : null;
+  const r = currentTarget();
   if (!r || r.decision === "pending") { card.hidden = true; return; }
-  const name = r.label || (r.guess ? `${t("maybe")} ${r.guess}?` : "—");
+  const name = r.label || (r.guess ? `${t("maybe")} ${r.guess}?` : t("unknown"));
   const nbrs = (r.neighbours || []).map((n) => `
     <div class="nbr">${n.thumb ? `<img src="/thumb/${state.task}/${n.thumb}" alt="">` : ""}
       ${escapeHtml(n.label)}<br>${n.score.toFixed(2)}</div>`).join("");
@@ -268,9 +312,24 @@ function openTeach() {
   $("labelInput").placeholder = state.task === "people" ? t("labelPerson") : t("labelObject");
   $("consentRow").hidden = state.task !== "people";
   $("consent").checked = false;
-  $("teachThumb").removeAttribute("src");
+  const thumb = cropPreview(r.box);
+  if (thumb) $("teachThumb").src = thumb; else $("teachThumb").removeAttribute("src");
   $("sheet").hidden = false;
   setTimeout(() => $("labelInput").focus(), 50);
+}
+
+// What exactly will be taught: the target's region of the current video frame.
+function cropPreview(box) {
+  const vw = video.videoWidth, vh = video.videoHeight;
+  if (!vw || !vh) return null;
+  const [x1, y1, x2, y2] = box;
+  const sx = x1 * vw, sy = y1 * vh, sw = (x2 - x1) * vw, sh = (y2 - y1) * vh;
+  if (sw < 2 || sh < 2) return null;
+  const c = document.createElement("canvas");
+  const s = 192 / Math.max(sw, sh);
+  c.width = Math.round(sw * s); c.height = Math.round(sh * s);
+  c.getContext("2d").drawImage(video, sx, sy, sw, sh, 0, 0, c.width, c.height);
+  return c.toDataURL("image/jpeg", 0.85);
 }
 
 async function submitTeach(ev) {
@@ -373,7 +432,9 @@ async function renderMemory() {
 overlay.addEventListener("click", (ev) => {
   const rect = overlay.getBoundingClientRect();
   const r = hitTest(ev.clientX - rect.left, ev.clientY - rect.top);
+  // tapping empty space returns to "aim" mode (the box under the reticle)
   state.selected = r ? r.id : null;
+  if (navigator.vibrate && r) navigator.vibrate(15);
   renderCard();
 });
 $("teachBtn").onclick = openTeach;

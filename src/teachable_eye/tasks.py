@@ -16,6 +16,39 @@ from teachable_eye.memory import TaskMemory
 from teachable_eye.vote import LabelVote
 
 THUMB_SIZE = 160
+EDGE = 0.02   # a box this close to a frame edge "touches" it
+
+
+def is_background(box):
+    """Tables, walls, floors: boxes touching two or more frame edges.
+
+    A phone is held close to what it looks at, so a real target rarely
+    reaches two edges at once, while the surfaces around it nearly always do.
+    """
+    x1, y1, x2, y2 = box
+    touches = (x1 <= EDGE) + (y1 <= EDGE) + (x2 >= 1 - EDGE) + (y2 >= 1 - EDGE)
+    return touches >= 2
+
+
+def pick_focus(boxes, aim=(0.5, 0.5)):
+    """The target: the smallest non-background box under the aim point.
+
+    Falls back to the non-background box whose centre is nearest the aim.
+    `boxes`: {id: [x1, y1, x2, y2]} normalised. Returns an id or None.
+    """
+    candidates = {k: b for k, b in boxes.items() if not is_background(b)}
+    if not candidates:
+        return None
+    ax, ay = aim
+    under = [(((b[2] - b[0]) * (b[3] - b[1])), k) for k, b in candidates.items()
+             if b[0] <= ax <= b[2] and b[1] <= ay <= b[3]]
+    if under:
+        return min(under)[1]
+
+    def dist(b):
+        cx, cy = (b[0] + b[2]) / 2, (b[1] + b[3]) / 2
+        return (cx - ax) ** 2 + (cy - ay) ** 2
+    return min(candidates, key=lambda k: dist(candidates[k]))
 
 
 class ObjectsTask:
@@ -63,11 +96,13 @@ class ObjectsTask:
             for store in (self._votes, self._shown, self._crops):
                 for tid in [k for k in store if k not in self.detector.tracks]:
                     del store[tid]
-            focus = max(tracks, key=lambda t: t.salience).tid if tracks else None
+            boxes = {t.tid: t.norm_box() for t in tracks}
+            focus = pick_focus(boxes)
             out = []
             for t in tracks:
                 shown = self._shown.get(t.tid)
-                row = {"id": t.tid, "box": t.norm_box(), "focus": t.tid == focus}
+                row = {"id": t.tid, "box": boxes[t.tid], "focus": t.tid == focus,
+                       "background": is_background(boxes[t.tid])}
                 row.update(shown.to_json() if shown else
                            {"decision": "pending", "label": None, "guess": None,
                             "score": 0.0, "neighbours": []})
