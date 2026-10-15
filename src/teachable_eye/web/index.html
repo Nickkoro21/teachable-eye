@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0b1220">
+  <title>teachable-eye</title>
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/static/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <main id="stage">
+    <video id="video" playsinline muted autoplay></video>
+    <canvas id="frozen" hidden></canvas>
+    <canvas id="overlay"></canvas>
+  </main>
+
+  <header id="top">
+    <div class="seg" id="taskSeg">
+      <button data-task="objects" class="on" data-i18n="objects">Objects</button>
+      <button data-task="people" data-i18n="people">People</button>
+    </div>
+    <div class="right">
+      <span id="conn" class="pill">…</span>
+      <button id="langBtn" class="pill">ΕΛ</button>
+      <button id="memBtn" class="pill" data-i18n="memory">Memory</button>
+    </div>
+  </header>
+
+  <section id="card" hidden></section>
+  <div id="hint" data-i18n="hintTap">Tap a box to select it, then TEACH.</div>
+
+  <footer id="bottom">
+    <button id="photoBtn" class="round" data-i18n="photo">Photo</button>
+    <button id="teachBtn" class="big" data-i18n="teach">TEACH</button>
+    <button id="liveBtn" class="round" data-i18n="live" hidden>Live</button>
+  </footer>
+
+  <div id="sheet" class="sheet" hidden>
+    <form id="teachForm">
+      <h3 data-i18n="teachTitle">Name this</h3>
+      <img id="teachThumb" alt="">
+      <input id="labelInput" autocomplete="off" maxlength="60" required>
+      <label id="consentRow" hidden>
+        <input type="checkbox" id="consent">
+        <span data-i18n="consent">This person agreed to be remembered on this device.</span>
+      </label>
+      <div class="row">
+        <button type="button" id="cancelTeach" data-i18n="cancel">Cancel</button>
+        <button type="submit" class="primary" data-i18n="save">Save</button>
+      </div>
+    </form>
+  </div>
+
+  <div id="memory" class="panel" hidden>
+    <div class="panel-head">
+      <h2 data-i18n="memory">Memory</h2>
+      <button id="closeMem" class="pill">✕</button>
+    </div>
+    <div id="memList"></div>
+    <button id="wipeBtn" class="danger" hidden data-i18n="forgetEveryone">Forget everyone</button>
+  </div>
+
+  <div id="toast" hidden></div>
+  <script src="/static/app.js"></script>
+</body>
+</html>

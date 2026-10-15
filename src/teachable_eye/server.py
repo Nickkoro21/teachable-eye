@@ -1,0 +1,215 @@
+"""HTTP + WebSocket server for the phone PWA (R9-R15).
+
+The phone keeps its own live video and only sends downscaled JPEG frames over
+/ws; each reply carries normalised boxes and decisions that the page draws on
+top of its video. The client waits for each reply before sending the next
+frame, so frames never queue up behind a slow one.
+
+Only one camera source is active: a new /ws connection replaces the previous
+one and resets that task's tracker (R11).
+"""
+import asyncio
+import re
+import time
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
+
+import cv2
+import numpy as np
+from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
+
+from teachable_eye import config
+
+WEB = Path(__file__).resolve().parent / "web"
+_SAFE_NAME = re.compile(r"^[0-9a-f]{32}\.jpg$")
+
+
+def decode_jpeg(data):
+    frame = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
+    if frame is None:
+        raise ValueError("not a JPEG/PNG image")
+    return frame
+
+
+class TeachBody(BaseModel):
+    task: str
+    id: int
+    label: str
+    consent: bool = False
+
+
+class LabelBody(BaseModel):
+    task: str
+    label: str
+    to: str | None = None
+
+
+class ExampleBody(BaseModel):
+    task: str
+    id: str
+
+
+class TaskBody(BaseModel):
+    task: str
+
+
+def create_app(tasks, cert_path=None, info=None):
+    """`tasks`: {name: task}. Each task has process/teach/still/reset/memory."""
+    app = FastAPI(title="teachable-eye", docs_url=None, redoc_url=None)
+    # one worker: models are not re-entrant and frames must stay in order
+    pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="vision")
+    state = {"active": None}   # the one live camera connection
+
+    def task_of(name):
+        task = tasks.get(name)
+        if task is None:
+            raise HTTPException(404, f"unknown task {name!r}")
+        return task
+
+    async def run(fn, *args):
+        return await asyncio.get_running_loop().run_in_executor(pool, fn, *args)
+
+    if WEB.exists():
+        app.mount("/static", StaticFiles(directory=WEB), name="static")
+
+    @app.get("/")
+    async def index():
+        return FileResponse(WEB / "index.html")
+
+    @app.get("/sw.js")
+    async def service_worker():
+        # served from the root so its scope covers the whole app
+        return FileResponse(WEB / "sw.js", media_type="text/javascript")
+
+    @app.get("/manifest.webmanifest")
+    async def manifest():
+        return FileResponse(WEB / "manifest.webmanifest",
+                            media_type="application/manifest+json")
+
+    @app.get("/cert.crt")
+    async def cert():
+        if not cert_path:
+            raise HTTPException(404, "no certificate (plain HTTP)")
+        return FileResponse(cert_path, media_type="application/x-x509-ca-cert",
+                            filename="teachable-eye.crt")
+
+    @app.get("/api/status")
+    async def status():
+        return {
+            "tasks": {name: {"threshold": t.memory.thresholds.threshold,
+                             "margin": t.memory.thresholds.margin,
+                             "examples": t.memory.count()}
+                      for name, t in tasks.items()},
+            **(info or {}),
+        }
+
+    @app.websocket("/ws")
+    async def ws(socket: WebSocket, task: str = "objects"):
+        if task not in tasks:
+            await socket.close(code=4404)
+            return
+        await socket.accept()
+        previous = state["active"]
+        state["active"] = socket
+        if previous is not None:
+            try:
+                await previous.close(code=4000, reason="replaced by a new camera")
+            except RuntimeError:
+                pass
+        current = tasks[task]
+        await run(current.reset)
+        try:
+            while True:
+                data = await socket.receive_bytes()
+                if state["active"] is not socket:
+                    break
+                started = time.perf_counter()
+                try:
+                    frame = decode_jpeg(data)
+                except ValueError as exc:
+                    await socket.send_json({"error": str(exc)})
+                    continue
+                rows = await run(current.process, frame)
+                await socket.send_json({
+                    "task": task, "rows": rows,
+                    "w": int(frame.shape[1]), "h": int(frame.shape[0]),
+                    "ms": round((time.perf_counter() - started) * 1000, 1),
+                })
+        except WebSocketDisconnect:
+            pass
+        finally:
+            if state["active"] is socket:
+                state["active"] = None
+
+    @app.post("/api/teach")
+    async def teach(body: TeachBody):
+        task = task_of(body.task)
+        if getattr(task, "needs_consent", False) and not body.consent:
+            raise HTTPException(428, "consent required for a person")
+        try:
+            pid = await run(task.teach, body.id, body.label)
+        except (LookupError, ValueError) as exc:
+            raise HTTPException(409, str(exc)) from None
+        return {"id": pid}
+
+    @app.post("/api/still")
+    async def still(request: Request, task: str = "objects"):
+        current = task_of(task)
+        try:
+            frame = decode_jpeg(await request.body())
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from None
+        rows = await run(current.still, frame)
+        return {"task": task, "rows": rows,
+                "w": int(frame.shape[1]), "h": int(frame.shape[0])}
+
+    @app.get("/api/memory")
+    async def memory(task: str = "objects"):
+        return {"task": task, "labels": task_of(task).memory.labels()}
+
+    @app.post("/api/rename")
+    async def rename(body: LabelBody):
+        if not body.to:
+            raise HTTPException(400, "missing new label")
+        try:
+            n = task_of(body.task).memory.rename(body.label, body.to)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from None
+        return {"changed": n}
+
+    @app.post("/api/forget")
+    async def forget(body: LabelBody):
+        return {"deleted": task_of(body.task).memory.forget_label(body.label)}
+
+    @app.post("/api/forget_example")
+    async def forget_example(body: ExampleBody):
+        return {"deleted": task_of(body.task).memory.forget_example(body.id)}
+
+    @app.post("/api/wipe")
+    async def wipe(body: TaskBody):
+        await run(task_of(body.task).memory.wipe)
+        return {"ok": True}
+
+    @app.get("/thumb/{task}/{name}")
+    async def thumb(task: str, name: str):
+        task_of(task)
+        if not _SAFE_NAME.match(name):
+            raise HTTPException(400, "bad name")
+        path = config.DATA_DIR / "thumbs" / task / name
+        if not path.exists():
+            raise HTTPException(404, "no such thumbnail")
+        return FileResponse(path, media_type="image/jpeg",
+                            headers={"Cache-Control": "max-age=86400"})
+
+    @app.exception_handler(HTTPException)
+    async def http_error(_, exc):
+        return JSONResponse({"error": exc.detail}, status_code=exc.status_code)
+
+    @app.get("/favicon.ico")
+    async def favicon():
+        return Response(status_code=204)
+
+    return app

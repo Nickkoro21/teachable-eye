@@ -1,0 +1,14 @@
+{
+  "name": "teachable-eye",
+  "short_name": "teachable-eye",
+  "description": "A teachable visual memory on the device.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "fullscreen",
+  "orientation": "any",
+  "background_color": "#0b1220",
+  "theme_color": "#0b1220",
+  "icons": [
+    { "src": "/static/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
