@@ -66,6 +66,34 @@ def pick_focus(boxes, aim=(0.5, 0.5)):
     return min(candidates, key=lambda k: dist(candidates[k]))
 
 
+# -- teach-time augmentation ---------------------------------------------------
+# A memory cannot generalise beyond what it stores, so a taught view also
+# stores a few plausible variants of itself (hidden from the user, deleted
+# with their view). Real views (Video) are still better than synthetic ones.
+
+def zoom_center(crop, keep=0.7):
+    """The middle of the crop: the same object seen from closer."""
+    h, w = crop.shape[:2]
+    dh, dw = int(h * (1 - keep) / 2), int(w * (1 - keep) / 2)
+    return crop[dh:h - dh, dw:w - dw].copy() if h > 20 and w > 20 else crop
+
+
+def flip(crop):
+    """Mirror image: the other side of a roughly symmetric object."""
+    return cv2.flip(crop, 1)
+
+
+def darker(crop, gain=0.7):
+    """Dimmer light (the room changes, the object does not)."""
+    return cv2.convertScaleAbs(crop, alpha=gain, beta=0)
+
+
+AUGMENT = {
+    "objects": (zoom_center, flip, darker),
+    "people": (flip, darker),     # faces are aligned: never crop them
+}
+
+
 def _unit(v):
     v = np.asarray(v, dtype=np.float32)
     n = float(np.linalg.norm(v))
@@ -236,11 +264,21 @@ class VisualTask:
             if held is None:
                 raise LookupError("the selection expired; press TEACH again")
             crops, tid, _ = held
+            augs = AUGMENT.get(self.name, ()) if config.AUGMENT else ()
             try:
                 vectors = self.embed(crops)
-                ids = [self.memory.teach(vec, label, thumb=self._save_thumb(c),
-                                         source=self.source)
-                       for c, vec in zip(crops, vectors)]
+                ids = []
+                for c, vec in zip(crops, vectors):
+                    thumb = self._save_thumb(c)
+                    pid = self.memory.teach(vec, label, thumb=thumb,
+                                            source=self.source)
+                    ids.append(pid)
+                    if augs:
+                        variants = [fn(c) for fn in augs]
+                        for fn, v in zip(augs, self.embed(variants)):
+                            self.memory.teach(v, label, thumb=thumb,
+                                              source=self.source, parent=pid,
+                                              aug=fn.__name__)
             except ValueError:
                 self._holds[hid] = held          # let the user fix the name
                 raise

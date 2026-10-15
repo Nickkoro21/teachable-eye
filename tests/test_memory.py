@@ -101,3 +101,16 @@ def test_a5_vote_does_not_flicker():
     assert v.add(_d(KNOWN, "mic")).label == "hat"
     assert v.add(_d(UNKNOWN)).label == "hat"          # hat, mic, unknown -> no majority, keep
     assert v.add(_d(UNKNOWN)).decision == UNKNOWN     # mic, unknown, unknown -> unknown
+
+
+def test_augmented_variants_are_hidden_and_go_with_their_view(mem):
+    view = mem.teach(axis(0), "bag", thumb="t.jpg")
+    for i, name in ((5, "zoom_center"), (6, "flip")):
+        mem.teach(toward(axis(0), axis(i), 0.95), "bag", thumb="t.jpg",
+                  parent=view, aug=name)
+    assert mem.labels()[0]["count"] == 1                 # variants not listed
+    d = mem.recognize(toward(axis(0), axis(5), 0.97), k=3)
+    assert d.label == "bag"
+    assert [n.id for n in d.neighbours] == [view]        # one view, best score
+    assert mem.forget_example(view) == 1
+    assert mem.count() == 0                              # variants deleted too

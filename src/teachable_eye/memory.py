@@ -67,7 +67,7 @@ class TaskMemory:
         shard = EdgeShard.create(str(self.dir), EdgeConfig(vectors={
             VECTOR: EdgeVectorParams(size=self.dim, distance=Distance.Cosine),
         }))
-        for key in ("label", "kind"):
+        for key in ("label", "kind", "parent"):
             shard.update(UpdateOperation.create_field_index(
                 key, PayloadSchemaType.Keyword))
         return shard
@@ -110,11 +110,16 @@ class TaskMemory:
         return len(ids)
 
     def forget_example(self, pid):
+        """Delete one taught view and the augmented variants made from it."""
         with self._lock:
-            before = self.count()
-            self.shard.update(UpdateOperation.delete_points([pid]))
-            self.shard.flush()
-            return before - self.count()
+            records, _ = self.shard.scroll(ScrollRequest(
+                limit=SCAN_LIMIT, with_payload=True))
+            ids = [str(r.id) for r in records
+                   if str(r.id) == pid or r.payload.get("parent") == pid]
+            if ids:
+                self.shard.update(UpdateOperation.delete_points(ids))
+                self.shard.flush()
+            return sum(1 for i in ids if i == pid)
 
     def rename(self, label, new_label):
         """Rename a label; renaming onto an existing label merges the two."""
@@ -132,18 +137,29 @@ class TaskMemory:
     # -- reads -----------------------------------------------------------------
 
     def recognize(self, vector, k=3):
-        """Nearest taught examples -> Decision (see policy.decide)."""
+        """Nearest taught examples -> Decision (see policy.decide).
+
+        An augmented variant counts as its original view: the evidence shows
+        each taught view once, with the best score among it and its variants.
+        """
         with self._lock:
             hits = self.shard.query(QueryRequest(
                 query=Query.Nearest(list(map(float, vector)), using=VECTOR),
                 filter=Filter(must=[FieldCondition(
                     key="kind", match=MatchValue(value=TAUGHT))]),
-                limit=k,
+                limit=k * 6,
                 with_payload=True,
             ))
-        neighbours = [Neighbour(str(h.id), h.payload.get("label", ""),
-                                float(h.score), h.payload.get("thumb"))
-                      for h in hits]
+        neighbours, seen = [], set()
+        for h in hits:                      # best-first
+            root = h.payload.get("parent") or str(h.id)
+            if root in seen:
+                continue
+            seen.add(root)
+            neighbours.append(Neighbour(root, h.payload.get("label", ""),
+                                        float(h.score), h.payload.get("thumb")))
+            if len(neighbours) == k:
+                break
         return decide(neighbours, self.thresholds)
 
     def count(self):
@@ -151,11 +167,15 @@ class TaskMemory:
             return self.shard.count(CountRequest(exact=True))
 
     def examples(self):
-        """Every taught example as {id, label, ts, thumb, ...}, newest first."""
+        """Every taught view as {id, label, ts, thumb, ...}, newest first.
+
+        Augmented variants are internal and not listed (they go with their view).
+        """
         with self._lock:
             records, _ = self.shard.scroll(ScrollRequest(
                 limit=SCAN_LIMIT, with_payload=True))
-        rows = [dict(r.payload, id=str(r.id)) for r in records]
+        rows = [dict(r.payload, id=str(r.id)) for r in records
+                if not r.payload.get("parent")]
         rows.sort(key=lambda r: r.get("ts") or 0, reverse=True)
         return rows
 

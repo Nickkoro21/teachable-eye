@@ -52,7 +52,12 @@ PEOPLE = TaskThresholds(_num("PEOPLE_THRESHOLD", 0.40),
 
 DETECT_CONF = _num("DETECT_CONF", 0.30)
 DETECT_MIN_AREA = _num("DETECT_MIN_AREA", 0.002)
-DETECT_MAX_AREA = _num("DETECT_MAX_AREA", 0.45)   # phones hold objects close
+# Close-ups fill the frame, so large boxes are kept; boxes touching two frame
+# edges are flagged "background" (thin, never the default target) instead.
+DETECT_MAX_AREA = _num("DETECT_MAX_AREA", 0.90)
+
+# Teach-time augmentation (zoom, flip, darker variants of each taught view).
+AUGMENT = os.environ.get("AUGMENT", "on").strip().lower() not in ("off", "0", "false")
 
 # Where the ONNX encoders run: auto (CUDA when available), cuda, or cpu.
 ENCODER_DEVICE = _choice("ENCODER_DEVICE", "auto", {"auto", "cuda", "cpu"})

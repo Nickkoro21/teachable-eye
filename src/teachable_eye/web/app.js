@@ -292,8 +292,11 @@ function caption(r) {
 
 function chip(text, x, y, color, topLimit, cw) {
   const tw = Math.min(ctx.measureText(text).width + 14, cw - 8);
+  // above the box if there is room, else inside it; never under the top bar
+  // or off the bottom of the screen (boxes can extend past the visible crop)
   let ty = y - 28;
-  if (ty < topLimit) ty = y + 4;            // keep it out from under the top bar
+  if (ty < topLimit) ty = Math.max(topLimit, y + 4);
+  ty = Math.min(ty, overlay.clientHeight - 140);
   const tx = Math.max(4, Math.min(x, cw - tw - 4));
   ctx.fillStyle = color;
   ctx.beginPath(); ctx.roundRect(tx, ty, tw, 26, 7); ctx.fill();
