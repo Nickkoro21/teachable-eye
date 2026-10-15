@@ -87,3 +87,16 @@ Aircraft, video files and clip tooling (Phase 2+), cloud sync, on-device inferen
 | Chrome needs HTTPS for the camera, and the certificate warning confuses users | Self-signed certificate plus the `/cert.crt` install path (from the robot docs) |
 | Windows Firewall blocks the LAN port | The author allows Python on **private** networks once |
 | Wi-Fi latency | ~6 fps uplink at 960 px max side; the overlay is drawn locally |
+
+## Changes from phone testing (2026-10-15)
+
+Recorded here so the spec matches the build (no drift):
+
+| Feedback | Change |
+|---|---|
+| Too many boxes, no visible selection | All boxes shown; tap selects, tapping the same spot again cycles through overlapping boxes; the target gets corners. Boxes touching two frame edges are "background" (thin, never the default target) |
+| Save failed: "object no longer in view" | TEACH creates a server-side **hold** of the crop; live frames pause while naming; TEACH also works on photos |
+| Re-typing names for new views | The name sheet lists existing labels (thumbnail + count), the most likely one starred and pre-selected |
+| Header and hint overflowed on a narrow phone | Compact icon header, wrapping hint, landing page with how-to, privacy note and language switch |
+| "How do I teach from video?" | **Teach from video (burst):** for 5 s, distinct views of the chosen track are collected (a view is kept only when cosine < 0.95 to all kept views, max 10), then named at once |
+| Phone connection | Tailscale Serve on :8443 (trusted certificate, works away from home); server bound to 127.0.0.1 |

@@ -41,13 +41,9 @@ def main():
         tasks["objects"].detector.warm()
         encoders.warm_clip()
     if "people" in wanted:
-        try:
-            from teachable_eye.people import PeopleTask
-        except ImportError:
-            print("people task not available yet; skipping")
-        else:
-            print("loading people task (YuNet + SFace)...")
-            tasks["people"] = PeopleTask()
+        from teachable_eye.tasks import PeopleTask
+        print("loading people task (YuNet + SFace)...")
+        tasks["people"] = PeopleTask()
     if not tasks:
         raise SystemExit("no tasks loaded")
 

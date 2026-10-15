@@ -76,3 +76,53 @@ def test_teach_from_photo(task):
     hid = task.hold(rows[0]["id"], from_still=True)
     assert task.teach_held(hid, "mug")
     assert task.memory.labels()[0]["label"] == "mug"
+
+
+class MovingDetector(FakeDetector):
+    """Track 7 whose look changes every frame (the user walks around it)."""
+
+    def __init__(self):
+        super().__init__()
+        self.shade = 0
+
+    def process(self, frame, now):
+        rows = super().process(frame, now)
+        self.shade = (self.shade + 40) % 256
+        self.tracks[7].crop = np.full((20, 20, 3), self.shade, np.uint8)
+        return rows
+
+
+def angle_embed(crops):
+    # each shade maps to a different direction, so views are distinct
+    out = []
+    for c in crops:
+        a = float(c.mean()) / 255 * 3.0
+        out.append([float(np.cos(a)), float(np.sin(a)), 0.0, 0.0])
+    return out
+
+
+def test_burst_collects_distinct_views(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "DATA_DIR", tmp_path)
+    mem = TaskMemory(tmp_path / "m", 4, "objects", config.TaskThresholds(0.9, 0.05))
+    task = ObjectsTask(detector=MovingDetector(), embed=angle_embed, memory=mem)
+    frame = np.zeros((100, 100, 3), np.uint8)
+    task.process(frame, now=1.0)
+    bid = task.start_burst(7, seconds=30)
+    for i in range(12):
+        task.process(frame, now=2.0 + i * 0.2)
+    assert task.burst_status(bid)["views"] >= 3
+    hid, views = task.finish_burst(bid)
+    assert len(task.hold_preview(hid)) == views
+    task.teach_held(hid, "teapot")
+    assert task.memory.labels()[0]["count"] == views
+    mem.close()
+
+
+def test_burst_still_view_is_one_view(task):
+    frame = np.zeros((100, 100, 3), np.uint8)
+    task.process(frame, now=1.0)
+    bid = task.start_burst(7, seconds=30)
+    for i in range(8):                        # identical crops every frame
+        task.process(frame, now=2.0 + i * 0.2)
+    _, views = task.finish_burst(bid)
+    assert views == 1

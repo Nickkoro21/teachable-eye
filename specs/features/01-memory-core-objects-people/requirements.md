@@ -51,3 +51,10 @@
 - **N5 Attribution:** every adapted file or function from the robot repo carries a header comment naming the source and the Apache-2.0 licence.
 - **N6 Language:** code, comments and docs are in English. Greek appears only in UI strings and voice parsing.
 - **N7 No secrets:** no credentials are needed for this feature; Qdrant Cloud is not used.
+
+## Added during implementation
+
+- **R22**: TEACH holds the selected crop on the server at press time; naming may take up to 5 min and survives the object leaving view.
+- **R23**: Teach from video collects up to 10 distinct views of one track over 5 s (cosine < 0.95 to every kept view) and teaches them under one label.
+- **R24**: The teach sheet offers existing labels as one-tap choices, the most likely first.
+- **R25**: A landing page explains the four steps, shows whether the PC is reachable, and starts Objects or People mode.

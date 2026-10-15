@@ -10,6 +10,31 @@
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
+  <!-- landing ------------------------------------------------------------ -->
+  <section id="landing">
+    <div class="land-inner">
+      <img src="/static/icon.svg" alt="" class="logo">
+      <h1>teachable-eye</h1>
+      <p class="tagline" data-i18n="tagline">Show it a few examples. It remembers — on your own device.</p>
+      <ol class="steps">
+        <li><b data-i18n="step1t">Point</b> <span data-i18n="step1">the camera at something; boxes appear around what it sees.</span></li>
+        <li><b data-i18n="step2t">Choose</b> <span data-i18n="step2">a box (tap it; tap again for the next one under your finger).</span></li>
+        <li><b data-i18n="step3t">Teach</b> <span data-i18n="step3">it a name, or use Video to capture several views while you move around it.</span></li>
+        <li><b data-i18n="step4t">Check</b> <span data-i18n="step4">— green means known, orange means unsure, grey means unknown.</span></li>
+      </ol>
+      <div class="land-actions">
+        <button class="big wide" data-start="objects" data-i18n="startObjects">Start · Objects</button>
+        <button class="big wide alt" data-start="people" data-i18n="startPeople">Start · People</button>
+      </div>
+      <div class="land-foot">
+        <button id="landLang" class="pill">Ελληνικά</button>
+        <span id="landStatus" class="muted"></span>
+      </div>
+      <p class="privacy" data-i18n="privacy">Everything it learns stays on your PC. Faces are stored only with the person's consent and can be forgotten at any time.</p>
+    </div>
+  </section>
+
+  <!-- live view ---------------------------------------------------------- -->
   <main id="stage">
     <video id="video" playsinline muted autoplay></video>
     <canvas id="frozen" hidden></canvas>
@@ -17,30 +42,38 @@
   </main>
 
   <header id="top">
+    <button id="homeBtn" class="icon" aria-label="home">⌂</button>
     <div class="seg" id="taskSeg">
       <button data-task="objects" class="on" data-i18n="objects">Objects</button>
       <button data-task="people" data-i18n="people">People</button>
     </div>
-    <div class="right">
-      <span id="conn" class="pill">…</span>
-      <button id="langBtn" class="pill">ΕΛ</button>
-      <button id="memBtn" class="pill" data-i18n="memory">Memory</button>
-    </div>
+    <span id="conn" class="dot" title=""></span>
+    <button id="langBtn" class="icon">EL</button>
+    <button id="memBtn" class="icon" aria-label="memory">☰</button>
   </header>
 
   <section id="card" hidden></section>
-  <div id="hint" data-i18n="hintTap">Tap a box to select it, then TEACH.</div>
+  <div id="hint"></div>
+
+  <div id="rec" hidden>
+    <div class="rec-ring"><span id="recLeft">5</span></div>
+    <div class="rec-text"><b data-i18n="recording">Recording views…</b><br>
+      <span data-i18n="recMove">Move slowly around it.</span> <span id="recViews"></span></div>
+    <button id="recStop" class="pill" data-i18n="stop">Stop</button>
+  </div>
 
   <footer id="bottom">
     <button id="photoBtn" class="round" data-i18n="photo">Photo</button>
-    <button id="teachBtn" class="big" data-i18n="teach">TEACH</button>
     <button id="liveBtn" class="round" data-i18n="live" hidden>Live</button>
+    <button id="teachBtn" class="big" data-i18n="teach">TEACH</button>
+    <button id="videoBtn" class="round" data-i18n="video">Video</button>
   </footer>
 
+  <!-- name sheet -------------------------------------------------------- -->
   <div id="sheet" class="sheet" hidden>
     <form id="teachForm">
       <h3 data-i18n="teachTitle">Name this</h3>
-      <img id="teachThumb" alt="">
+      <div id="teachThumbs"></div>
       <div id="choicesWrap" hidden>
         <small data-i18n="existing">Add to an existing label</small>
         <div id="choices"></div>
@@ -58,10 +91,11 @@
     </form>
   </div>
 
+  <!-- memory panel ------------------------------------------------------ -->
   <div id="memory" class="panel" hidden>
     <div class="panel-head">
-      <h2 data-i18n="memory">Memory</h2>
-      <button id="closeMem" class="pill">✕</button>
+      <h2 id="memTitle" data-i18n="memory">Memory</h2>
+      <button id="closeMem" class="icon">✕</button>
     </div>
     <div id="memList"></div>
     <button id="wipeBtn" class="danger" hidden data-i18n="forgetEveryone">Forget everyone</button>

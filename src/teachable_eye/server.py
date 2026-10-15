@@ -40,6 +40,12 @@ class HoldBody(BaseModel):
     still: bool = False      # the id refers to the last photo, not a live track
 
 
+class BurstBody(BaseModel):
+    task: str
+    id: int
+    seconds: float = 5.0
+
+
 class TeachBody(BaseModel):
     task: str
     label: str
@@ -159,6 +165,40 @@ def create_app(tasks, cert_path=None, info=None):
         except LookupError as exc:
             raise HTTPException(409, str(exc)) from None
         return {"hold": hid}
+
+    @app.post("/api/burst")
+    async def burst(body: BurstBody):
+        """Teach from video: collect distinct views of one tracked object."""
+        try:
+            bid = await run(task_of(body.task).start_burst, body.id, body.seconds)
+        except LookupError as exc:
+            raise HTTPException(409, str(exc)) from None
+        return {"burst": bid}
+
+    @app.get("/api/burst/{bid}")
+    async def burst_status(bid: str, task: str = "objects"):
+        try:
+            return task_of(task).burst_status(bid)
+        except LookupError as exc:
+            raise HTTPException(404, str(exc)) from None
+
+    @app.post("/api/burst/{bid}/finish")
+    async def burst_finish(bid: str, task: str = "objects"):
+        try:
+            hid, views = await run(task_of(task).finish_burst, bid)
+        except LookupError as exc:
+            raise HTTPException(409, str(exc)) from None
+        return {"hold": hid, "views": views}
+
+    @app.get("/api/hold/{hid}/{index}.jpg")
+    async def hold_thumb(hid: str, index: int, task: str = "objects"):
+        try:
+            thumbs = task_of(task).hold_preview(hid)
+        except LookupError as exc:
+            raise HTTPException(404, str(exc)) from None
+        if not 0 <= index < len(thumbs):
+            raise HTTPException(404, "no such view")
+        return Response(thumbs[index], media_type="image/jpeg")
 
     @app.post("/api/teach")
     async def teach(body: TeachBody):
