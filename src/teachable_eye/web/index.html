@@ -41,6 +41,11 @@
     <form id="teachForm">
       <h3 data-i18n="teachTitle">Name this</h3>
       <img id="teachThumb" alt="">
+      <div id="choicesWrap" hidden>
+        <small data-i18n="existing">Add to an existing label</small>
+        <div id="choices"></div>
+      </div>
+      <small data-i18n="orNew">…or type a new name</small>
       <input id="labelInput" autocomplete="off" maxlength="60" required>
       <label id="consentRow" hidden>
         <input type="checkbox" id="consent">

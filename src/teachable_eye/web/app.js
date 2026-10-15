@@ -21,6 +21,7 @@ const I18N = {
     cameraError: "Camera unavailable: {0}", nothingSelected: "Nothing to teach in view.",
     consentNeeded: "Please confirm consent first.", nearest: "nearest examples",
     peopleOff: "People mode is not available on the server yet.",
+    existing: "Add a view to an existing label", orNew: "…or type a new name", newLabel: "new",
   },
   el: {
     objects: "Αντικείμενα", people: "Πρόσωπα", memory: "Μνήμη", photo: "Φωτό",
@@ -38,6 +39,7 @@ const I18N = {
     cameraError: "Η κάμερα δεν είναι διαθέσιμη: {0}", nothingSelected: "Δεν υπάρχει κάτι να μάθω.",
     consentNeeded: "Επιβεβαίωσε πρώτα τη συναίνεση.", nearest: "πιο κοντινά παραδείγματα",
     peopleOff: "Τα πρόσωπα δεν είναι ακόμα διαθέσιμα στον server.",
+    existing: "Πρόσθεσε όψη σε υπάρχουσα ετικέτα", orNew: "…ή γράψε νέο όνομα", newLabel: "νέο",
   },
 };
 
@@ -330,13 +332,58 @@ async function openTeach() {
     state.holdId = res.hold;
   } catch (err) { toast(err.message, 4000); return; }
   state.naming = true;
-  $("labelInput").value = r.label || r.guess || "";
+  $("labelInput").value = "";
+  loadChoices(r);
   $("labelInput").placeholder = state.task === "people" ? t("labelPerson") : t("labelObject");
   $("consentRow").hidden = state.task !== "people";
   $("consent").checked = false;
   if (thumb) $("teachThumb").src = thumb; else $("teachThumb").removeAttribute("src");
   $("sheet").hidden = false;
-  setTimeout(() => $("labelInput").focus(), 50);
+
+}
+
+// Existing labels as one-tap choices. The most likely one (what memory
+// matched or guessed for this object) comes first, marked with a star.
+async function loadChoices(r) {
+  const wrap = $("choicesWrap"), box = $("choices");
+  box.innerHTML = ""; wrap.hidden = true;
+  let labels = [];
+  try {
+    labels = (await (await fetch(`/api/memory?task=${state.task}`)).json()).labels || [];
+  } catch { setTimeout(() => $("labelInput").focus(), 50); return; }
+  if (!labels.length) { setTimeout(() => $("labelInput").focus(), 50); return; }
+  const likely = r.label || r.guess || (r.neighbours && r.neighbours[0] && r.neighbours[0].label);
+  labels.sort((a, b) => (b.label === likely) - (a.label === likely));
+  for (const g of labels) {
+    const thumb = (g.examples.find((e) => e.thumb) || {}).thumb;
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "choice" + (g.label === likely ? " suggested" : "");
+    b.dataset.label = g.label;
+    b.innerHTML = `${thumb ? `<img src="/thumb/${state.task}/${thumb}" alt="">` : ""}
+      <span>${g.label === likely ? "★ " : ""}${escapeHtml(g.label)}</span><span class="n">${g.count}</span>`;
+    b.onclick = () => { $("labelInput").value = g.label; markChoice(); };
+    box.appendChild(b);
+  }
+  wrap.hidden = false;
+  if (likely && labels.some((g) => g.label === likely)) {
+    $("labelInput").value = likely;
+  }
+  markChoice();
+}
+
+// Highlight the chip matching the typed name and filter the rest.
+function markChoice() {
+  const typed = $("labelInput").value.trim().toLowerCase().replace(/\s+/g, " ");
+  let exact = false;
+  document.querySelectorAll("#choices .choice").forEach((c) => {
+    const label = c.dataset.label;
+    const on = label === typed;
+    exact = exact || on;
+    c.classList.toggle("on", on);
+    c.hidden = typed && !on && !label.includes(typed);
+  });
+  $("saveBtn").textContent = typed && !exact ? `${t("save")} · ${t("newLabel")}` : t("save");
 }
 
 function closeTeach() {
@@ -474,6 +521,7 @@ overlay.addEventListener("click", (ev) => {
 });
 $("teachBtn").onclick = openTeach;
 $("cancelTeach").onclick = closeTeach;
+$("labelInput").addEventListener("input", markChoice);
 $("teachForm").onsubmit = submitTeach;
 $("photoBtn").onclick = takePhoto;
 $("liveBtn").onclick = backToLive;
