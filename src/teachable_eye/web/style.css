@@ -146,3 +146,7 @@ button { font: inherit; color: inherit; border: 0; cursor: pointer; }
   top: calc(env(safe-area-inset-top) + 62px); background: #000e; padding: 10px 16px;
   border-radius: 12px; text-align: center; overflow-wrap: anywhere; }
 [hidden] { display: none !important; }
+button.dot { padding: 0; }
+#diag { position: fixed; left: 8px; right: 8px; z-index: 6; top: calc(env(safe-area-inset-top) + 58px);
+  background: #000c; color: #9ef0e2; font: 12px/1.35 ui-monospace, monospace; padding: 6px 8px;
+  border-radius: 8px; overflow-wrap: anywhere; }

@@ -203,7 +203,9 @@ function connect() {
   ws.onopen = () => { state.wsReady = true; state.retry = 0; setConn("online"); };
   ws.onmessage = (ev) => {
     state.waiting = false;
-    const msg = JSON.parse(ev.data);
+    diag.got++;
+    let msg;
+    try { msg = JSON.parse(ev.data); } catch (err) { noteError("reply", err); return; }
     if (msg.error || msg.task !== state.task) return;
     state.rows = msg.rows; state.frameW = msg.w; state.frameH = msg.h; state.ms = msg.ms;
     if (state.selected != null && !state.still && !state.rows.some((r) => r.id === state.selected)) {
@@ -214,7 +216,7 @@ function connect() {
   ws.onclose = (ev) => {
     if (state.ws !== ws) return;          // superseded (task switch, home)
     state.wsReady = false; state.waiting = false; state.rows = [];
-    setConn("offline");
+    setConn("offline"); renderCard(); updateHint();     // no stale card
     if (ev.code === 4000) { toast(t("replaced"), 5000); return; }   // don't fight
     if (!state.running) return;
     const delay = Math.min(8000, 500 * 2 ** state.retry++);
@@ -228,18 +230,42 @@ function setConn(kind) {
   el.title = kind === "online" && state.ms ? `${Math.round(state.ms)} ms` : kind;
 }
 
+// The loop must never die: any error is recorded (see the diagnostics line,
+// tap the connection dot) and the next frame is always scheduled.
 async function pump() {
-  const now = performance.now();
-  if (state.running && state.wsReady && !state.waiting && !state.still && !state.naming
-      && !document.hidden && now - state.lastSent >= MIN_INTERVAL_MS) {
-    const blob = await snapshot(MAX_SIDE, 0.7);
-    if (blob && state.ws && state.ws.readyState === WebSocket.OPEN) {
-      state.waiting = true; state.lastSent = now;
-      state.ws.send(await blob.arrayBuffer());
+  try {
+    const now = performance.now();
+    if (state.waiting && now - state.lastSent > 4000) state.waiting = false;   // lost reply
+    if (state.running && state.wsReady && !state.waiting && !state.still && !state.naming
+        && !document.hidden && now - state.lastSent >= MIN_INTERVAL_MS) {
+      const blob = await snapshot(MAX_SIDE, 0.7);
+      if (blob && state.ws && state.ws.readyState === WebSocket.OPEN) {
+        state.waiting = true; state.lastSent = now;
+        state.ws.send(await blob.arrayBuffer());
+        diag.sent++;
+      }
     }
-  }
-  draw();
+  } catch (err) { noteError("send", err); }
+  try { draw(); } catch (err) { noteError("draw", err); }
+  renderDiag();
   requestAnimationFrame(pump);
+}
+
+// -- diagnostics (tap the connection dot) ---------------------------------------
+const diag = { on: false, sent: 0, got: 0, err: "", t0: performance.now(), fps: 0 };
+function noteError(where, err) {
+  diag.err = `${where}: ${err && err.message || err}`;
+  if (!noteError.shown) { noteError.shown = true; toast(diag.err, 6000); }
+}
+function renderDiag() {
+  const el = $("diag");
+  if (!diag.on) { el.hidden = true; return; }
+  const now = performance.now();
+  if (now - diag.t0 > 1000) { diag.fps = diag.got * 1000 / (now - diag.t0); diag.got = 0; diag.t0 = now; }
+  el.hidden = false;
+  el.textContent = `${state.wsReady ? "ws ok" : "ws —"} · ${diag.fps.toFixed(1)} fps · ${Math.round(state.ms)} ms · ` +
+    `boxes ${source().rows.length} · video ${video.videoWidth}×${video.videoHeight}` +
+    (diag.err ? ` · ${diag.err}` : "");
 }
 
 // -- drawing ------------------------------------------------------------------
@@ -649,6 +675,7 @@ $("teachForm").onsubmit = submitTeach;
 $("photoBtn").onclick = takePhoto;
 $("liveBtn").onclick = backToLive;
 $("memBtn").onclick = openMemory;
+$("conn").onclick = () => { diag.on = !diag.on; renderDiag(); };
 $("closeMem").onclick = () => { $("memory").hidden = true; };
 $("wipeBtn").onclick = async () => {
   if (confirm(t("wipeConfirm"))) { await api("/api/wipe", { task: "people" }); renderMemory(); }

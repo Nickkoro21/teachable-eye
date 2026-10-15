@@ -27,6 +27,17 @@ WEB = Path(__file__).resolve().parent / "web"
 _SAFE_NAME = re.compile(r"^[0-9a-f]{32}\.jpg$")
 
 
+def asset_version():
+    """Short hash of the web assets; changes whenever any of them changes."""
+    import hashlib
+    h = hashlib.sha1()
+    for name in ("index.html", "style.css", "app.js"):
+        path = WEB / name
+        if path.exists():
+            h.update(path.read_bytes())
+    return h.hexdigest()[:10]
+
+
 def decode_jpeg(data):
     frame = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
     if frame is None:
@@ -88,9 +99,24 @@ def create_app(tasks, cert_path=None, info=None):
     if WEB.exists():
         app.mount("/static", StaticFiles(directory=WEB), name="static")
 
+    @app.middleware("http")
+    async def no_stale_shell(request, call_next):
+        # Always revalidate the app shell, so a phone never mixes an old page
+        # with new scripts after an update (it did, during testing).
+        response = await call_next(request)
+        if request.url.path == "/" or request.url.path.startswith("/static/") \
+                or request.url.path in ("/sw.js", "/manifest.webmanifest"):
+            response.headers["Cache-Control"] = "no-cache"
+        return response
+
     @app.get("/")
     async def index():
-        return FileResponse(WEB / "index.html")
+        # cache-busting: every asset URL carries a hash of the current files
+        html = (WEB / "index.html").read_text(encoding="utf-8")
+        for asset in ("style.css", "app.js"):
+            html = html.replace(f"/static/{asset}\"",
+                                f"/static/{asset}?v={asset_version()}\"")
+        return Response(html, media_type="text/html; charset=utf-8")
 
     @app.get("/sw.js")
     async def service_worker():

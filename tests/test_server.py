@@ -136,3 +136,12 @@ def test_index_and_static(setup):
     assert "teachable-eye" in client.get("/").text
     assert client.get("/static/app.js").status_code == 200
     assert client.get("/manifest.webmanifest").status_code == 200
+
+
+def test_app_shell_is_never_stale(setup):
+    """Phones mixed an old cached page with new scripts during testing."""
+    client, _ = setup
+    page = client.get("/")
+    assert page.headers["cache-control"] == "no-cache"
+    assert "/static/app.js?v=" in page.text and "/static/style.css?v=" in page.text
+    assert client.get("/static/app.js").headers["cache-control"] == "no-cache"
