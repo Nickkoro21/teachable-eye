@@ -1,0 +1,167 @@
+"""One task's memory: a Qdrant Edge shard of taught examples.
+
+The core knows nothing about cameras, detectors or encoders. A task hands it
+vectors and labels; it stores them, finds nearest neighbours and applies the
+decision policy. One shard per task keeps vector spaces apart (CLIP 512-d vs
+SFace 128-d) and lets a whole task be wiped at once (e.g. "forget everyone").
+
+Patterns follow the DeepLearning.AI course (L3 store/find/forget, L5 teach +
+threshold) and https-deeplearning-ai/sc-on-device-ai-memory robot/brain/memory.py
+(Apache-2.0): named vector, flush after every write, RLock around the shard.
+"""
+import shutil
+import threading
+import time
+import uuid
+from pathlib import Path
+
+from qdrant_edge import (
+    CountRequest,
+    Distance,
+    EdgeConfig,
+    EdgeShard,
+    EdgeVectorParams,
+    FieldCondition,
+    Filter,
+    MatchValue,
+    PayloadSchemaType,
+    Point,
+    Query,
+    QueryRequest,
+    ScrollRequest,
+    UpdateOperation,
+)
+
+from teachable_eye.labels import norm_label
+from teachable_eye.policy import Neighbour, decide
+
+VECTOR = "v"
+SCAN_LIMIT = 100_000   # full scans are fine at personal scale
+TAUGHT = "taught"
+
+
+class TaskMemory:
+    def __init__(self, directory, dim, task, thresholds):
+        self.dir = Path(directory)
+        self.dim = dim
+        self.task = task
+        self.thresholds = thresholds
+        self._lock = threading.RLock()
+        self.shard = self._open()
+
+    # -- lifecycle -------------------------------------------------------------
+
+    def _open(self):
+        if (self.dir / "edge_config.json").exists():
+            return EdgeShard.load(str(self.dir))
+        self.dir.mkdir(parents=True, exist_ok=True)
+        shard = EdgeShard.create(str(self.dir), EdgeConfig(vectors={
+            VECTOR: EdgeVectorParams(size=self.dim, distance=Distance.Cosine),
+        }))
+        for key in ("label", "kind"):
+            shard.update(UpdateOperation.create_field_index(
+                key, PayloadSchemaType.Keyword))
+        return shard
+
+    def close(self):
+        with self._lock:
+            self.shard.close()
+
+    def wipe(self):
+        """Delete every example of this task, files included."""
+        with self._lock:
+            self.shard.close()
+            shutil.rmtree(self.dir, ignore_errors=True)
+            self.shard = self._open()
+
+    # -- writes ----------------------------------------------------------------
+
+    def teach(self, vector, label, **payload):
+        """Add one example. Re-teaching a label adds a view, never overwrites."""
+        label = norm_label(label)
+        if not label:
+            raise ValueError("empty label")
+        pid = str(uuid.uuid4())
+        body = {"label": label, "task": self.task, "kind": TAUGHT,
+                "ts": time.time(), **payload}
+        with self._lock:
+            self.shard.update(UpdateOperation.upsert_points([
+                Point(id=pid, vector={VECTOR: list(map(float, vector))},
+                      payload=body)]))
+            self.shard.flush()
+        return pid
+
+    def forget_label(self, label):
+        """Delete every example of a label. Returns how many were deleted."""
+        ids = self._ids_of(norm_label(label))
+        if ids:
+            with self._lock:
+                self.shard.update(UpdateOperation.delete_points(ids))
+                self.shard.flush()
+        return len(ids)
+
+    def forget_example(self, pid):
+        with self._lock:
+            before = self.count()
+            self.shard.update(UpdateOperation.delete_points([pid]))
+            self.shard.flush()
+            return before - self.count()
+
+    def rename(self, label, new_label):
+        """Rename a label; renaming onto an existing label merges the two."""
+        new_label = norm_label(new_label)
+        if not new_label:
+            raise ValueError("empty label")
+        ids = self._ids_of(norm_label(label))
+        if ids:
+            with self._lock:
+                self.shard.update(UpdateOperation.set_payload(
+                    ids, {"label": new_label}))
+                self.shard.flush()
+        return len(ids)
+
+    # -- reads -----------------------------------------------------------------
+
+    def recognize(self, vector, k=3):
+        """Nearest taught examples -> Decision (see policy.decide)."""
+        with self._lock:
+            hits = self.shard.query(QueryRequest(
+                query=Query.Nearest(list(map(float, vector)), using=VECTOR),
+                filter=Filter(must=[FieldCondition(
+                    key="kind", match=MatchValue(value=TAUGHT))]),
+                limit=k,
+                with_payload=True,
+            ))
+        neighbours = [Neighbour(str(h.id), h.payload.get("label", ""),
+                                float(h.score), h.payload.get("thumb"))
+                      for h in hits]
+        return decide(neighbours, self.thresholds)
+
+    def count(self):
+        with self._lock:
+            return self.shard.count(CountRequest(exact=True))
+
+    def examples(self):
+        """Every taught example as {id, label, ts, thumb, ...}, newest first."""
+        with self._lock:
+            records, _ = self.shard.scroll(ScrollRequest(
+                limit=SCAN_LIMIT, with_payload=True))
+        rows = [dict(r.payload, id=str(r.id)) for r in records]
+        rows.sort(key=lambda r: r.get("ts") or 0, reverse=True)
+        return rows
+
+    def labels(self):
+        """Labels with their examples, most recently taught first."""
+        groups = {}
+        for row in self.examples():
+            groups.setdefault(row["label"], []).append(row)
+        return [{"label": label, "count": len(rows), "examples": rows}
+                for label, rows in groups.items()]
+
+    def _ids_of(self, label):
+        with self._lock:
+            records, _ = self.shard.scroll(ScrollRequest(
+                limit=SCAN_LIMIT, with_payload=False,
+                filter=Filter(must=[FieldCondition(
+                    key="label", match=MatchValue(value=label))])))
+        return [str(r.id) for r in records]
