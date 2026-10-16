@@ -30,6 +30,8 @@ const I18N = {
     consentAll: "These people agreed to be remembered on this device.", noBoxes: "No boxes on this photo.",
     deleteViewConfirm: "Delete this view and its {0} variants?",
     augNote: "Each view also stores variants: zoom, mirror, darker (see Memory).",
+    augNotePeople: "Each view also stores variants: mirror, darker (see Memory).",
+    saving: "Saving…",
     aug_zoom_center: "zoom", aug_flip: "mirror", aug_darker: "darker", variant: "variant",
     liveTapHint: "Nothing there. Take a Photo to mark your own box.",
     known: "known", uncertain: "uncertain", unknown: "unknown", pending: "looking…",
@@ -87,6 +89,8 @@ const I18N = {
     consentAll: "Τα πρόσωπα συμφώνησαν να τα θυμάται αυτή η συσκευή.", noBoxes: "Δεν υπάρχουν πλαίσια σε αυτή τη φωτογραφία.",
     deleteViewConfirm: "Διαγραφή αυτής της όψης και των {0} παραγώγων της;",
     augNote: "Κάθε όψη αποθηκεύει και παράγωγα: ζουμ, καθρέφτης, σκοτεινό (δες Μνήμη).",
+    augNotePeople: "Κάθε όψη αποθηκεύει και παράγωγα: καθρέφτης, σκοτεινό (δες Μνήμη).",
+    saving: "Αποθήκευση…",
     aug_zoom_center: "ζουμ", aug_flip: "καθρέφτης", aug_darker: "σκοτεινό", variant: "παράγωγο",
     liveTapHint: "Δεν υπάρχει κάτι εκεί. Πάτα Φωτό για να σημειώσεις δικό σου πλαίσιο.",
     known: "γνωστό", uncertain: "αβέβαιο", unknown: "άγνωστο", pending: "κοιτάζω…",
@@ -696,6 +700,8 @@ function openNameSheet(holdId, thumbs, r) {
   $("labelInput").value = "";
   $("labelInput").placeholder = state.task === "people" ? t("labelPerson") : t("labelObject");
   $("consentRow").hidden = state.task !== "people";
+  // faces are aligned, so people get no zoom variant (tasks.AUGMENT)
+  document.querySelector(".augnote").textContent = t(state.task === "people" ? "augNotePeople" : "augNote");
   $("consent").checked = false;
   setEvalMode(state.evalMode);
   $("sheet").hidden = false;
@@ -795,6 +801,7 @@ async function submitTeach(ev) {
   if (state.task === "people" && !$("consent").checked) { toast(t("consentNeeded")); return; }
   const save = $("saveBtn");
   save.disabled = true;
+  save.textContent = t("saving");
   const views = $("teachThumbs").children.length || 1;
   try {
     const res = await api("/api/teach", { task: state.task, hold: state.holdId, label,
@@ -805,6 +812,7 @@ async function submitTeach(ev) {
     toast(err.message, 4000);
   } finally {
     save.disabled = false;
+    markChoice();                    // the button's own label again
   }
 }
 
@@ -934,6 +942,7 @@ async function saveMulti(ev) {
   if (!items.length) return;
   if (state.task === "people" && !$("multiConsent").checked) { toast(t("consentNeeded")); return; }
   $("multiSave").disabled = true;
+  $("multiSave").textContent = t("saving");
   let done = 0;
   for (const it of items) {
     try {

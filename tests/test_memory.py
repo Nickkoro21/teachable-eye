@@ -114,3 +114,20 @@ def test_augmented_variants_are_hidden_and_go_with_their_view(mem):
     assert [n.id for n in d.neighbours] == [view]        # one view, best score
     assert mem.forget_example(view) == 1
     assert mem.count() == 0                              # variants deleted too
+
+
+def test_teach_many_is_one_write_with_variants(mem):
+    ids = mem.teach_many([
+        {"id": "00000000-0000-0000-0000-000000000001", "vector": axis(0), "label": "Hat"},
+        {"vector": axis(1), "label": "hat", "parent": "00000000-0000-0000-0000-000000000001",
+         "aug": "flip"},
+        {"vector": axis(2), "label": "cup"},
+    ])
+    assert ids[0] == "00000000-0000-0000-0000-000000000001" and len(ids) == 3
+    assert mem.count() == 3
+    view = [e for e in mem.examples() if e["label"] == "hat"][0]
+    assert [v["aug"] for v in view["variants"]] == ["flip"]
+    assert mem.recognize(axis(1)).label == "hat"            # the variant counts
+    assert mem.forget_example(ids[0]) == 1 and mem.count() == 1
+    with pytest.raises(ValueError):
+        mem.teach_many([{"vector": axis(0), "label": "  "}])

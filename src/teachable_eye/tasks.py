@@ -23,6 +23,7 @@ import cv2
 import numpy as np
 
 from teachable_eye import config
+from teachable_eye.labels import norm_label
 from teachable_eye.memory import TaskMemory
 from teachable_eye.vote import LabelVote
 
@@ -292,20 +293,24 @@ class VisualTask:
             crops, tid, _ = held
             augs = AUGMENT.get(self.name, ()) if config.AUGMENT else ()
             try:
+                if not norm_label(label):
+                    raise ValueError("empty label")
                 vectors = self.embed(crops)
-                ids = []
+                points, ids = [], []
                 for c, vec in zip(crops, vectors):
-                    thumb = self._save_thumb(c)
-                    pid = self.memory.teach(vec, label, thumb=thumb,
-                                            crop=self._save_crop(c),
-                                            source=self.source)
+                    pid = str(uuid.uuid4())
                     ids.append(pid)
+                    points.append({"id": pid, "vector": vec, "label": label,
+                                   "thumb": self._save_thumb(c),
+                                   "crop": self._save_crop(c), "source": self.source})
                     if augs:
                         variants = [fn(c) for fn in augs]
                         for fn, img, v in zip(augs, variants, self.embed(variants)):
-                            self.memory.teach(v, label, thumb=self._save_thumb(img),
-                                              source=self.source, parent=pid,
-                                              aug=fn.__name__)
+                            points.append({"vector": v, "label": label,
+                                           "thumb": self._save_thumb(img),
+                                           "source": self.source, "parent": pid,
+                                           "aug": fn.__name__})
+                self.memory.teach_many(points)       # one write, one flush
             except ValueError:
                 self._holds[hid] = held          # let the user fix the name
                 raise

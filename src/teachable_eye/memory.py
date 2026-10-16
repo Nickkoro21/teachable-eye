@@ -87,18 +87,33 @@ class TaskMemory:
 
     def teach(self, vector, label, **payload):
         """Add one example. Re-teaching a label adds a view, never overwrites."""
-        label = norm_label(label)
-        if not label:
-            raise ValueError("empty label")
-        pid = str(uuid.uuid4())
-        body = {"label": label, "task": self.task, "kind": TAUGHT,
-                "ts": time.time(), **payload}
-        with self._lock:
-            self.shard.update(UpdateOperation.upsert_points([
-                Point(id=pid, vector={VECTOR: list(map(float, vector))},
-                      payload=body)]))
-            self.shard.flush()
-        return pid
+        return self.teach_many([dict(payload, vector=vector, label=label)])[0]
+
+    def teach_many(self, points):
+        """Add several examples in one write and ONE flush.
+
+        `points`: [{"vector", "label", "id"?, **payload}]. A flush costs ~2 s
+        on the author's hard disk, so a video teach (views + variants) must not
+        flush per point: 18 points took ~35 s, now about one flush.
+        """
+        now = time.time()
+        batch, ids = [], []
+        for p in points:
+            p = dict(p)
+            label = norm_label(p.pop("label"))
+            if not label:
+                raise ValueError("empty label")
+            vector = p.pop("vector")
+            pid = str(p.pop("id", None) or uuid.uuid4())
+            body = {"label": label, "task": self.task, "kind": TAUGHT, "ts": now, **p}
+            batch.append(Point(id=pid, vector={VECTOR: list(map(float, vector))},
+                               payload=body))
+            ids.append(pid)
+        if batch:
+            with self._lock:
+                self.shard.update(UpdateOperation.upsert_points(batch))
+                self.shard.flush()
+        return ids
 
     def forget_label(self, label):
         """Delete every example of a label. Returns how many were deleted."""
