@@ -14,6 +14,8 @@ const I18N = {
     startObjects: "Start · Objects", startPeople: "Start · People",
     privacy: "Everything it learns stays on your PC. Faces are stored only with the person's consent and can be forgotten at any time.",
     serverOk: "PC connected · {0}", serverDown: "PC not reachable",
+    offlineTitle: "The PC is not answering.",
+    offlineHelp: "On the phone, turn Tailscale on (it must say Connected). On the PC, the server starts by itself after sign-in; keep the PC awake. This page checks again every few seconds.",
     objects: "Objects", people: "People", memory: "Memory", photo: "⏸ Photo", live: "▶ Live",
     video: "Video", teach: "TEACH", teachTitle: "Name this", save: "Save", cancel: "Cancel",
     labelObject: "e.g. hat", labelPerson: "e.g. person-a",
@@ -69,6 +71,8 @@ const I18N = {
     startObjects: "Έναρξη · Αντικείμενα", startPeople: "Έναρξη · Πρόσωπα",
     privacy: "Ό,τι μαθαίνει μένει στο PC σου. Τα πρόσωπα αποθηκεύονται μόνο με συναίνεση και διαγράφονται όποτε θέλεις.",
     serverOk: "PC συνδεδεμένο · {0}", serverDown: "Το PC δεν απαντά",
+    offlineTitle: "Το PC δεν απαντά.",
+    offlineHelp: "Στο κινητό, άνοιξε το Tailscale (πρέπει να γράφει Connected). Στο PC, ο server ξεκινά μόνος του μετά τη σύνδεση στα Windows· κράτα το PC ξύπνιο. Η σελίδα ξαναελέγχει κάθε λίγα δευτερόλεπτα.",
     objects: "Αντικείμενα", people: "Πρόσωπα", memory: "Μνήμη", photo: "⏸ Φωτό", live: "▶ Ζωντανά",
     video: "Βίντεο", teach: "ΜΑΘΕ", teachTitle: "Δώσε όνομα", save: "Αποθήκευση", cancel: "Άκυρο",
     labelObject: "π.χ. καπέλο", labelPerson: "π.χ. person-a",
@@ -200,13 +204,25 @@ async function api(path, body, method = "POST") {
 }
 
 // -- landing ------------------------------------------------------------------
+// The landing page keeps checking until the PC answers (Tailscale may be
+// off on the phone, or the PC asleep or still starting).
 async function checkServer() {
+  let up = false;
   try {
-    const st = await (await fetch("/api/status")).json();
+    const res = await fetch("/api/status", { cache: "no-store" });
+    const st = await res.json();
     state.tasks = Object.keys(st.tasks || { objects: 1 });
     $("landStatus").textContent = t("serverOk", state.tasks.map((k) => t(k)).join(", "));
+    up = true;
   } catch {
     $("landStatus").textContent = t("serverDown");
+  }
+  $("offline").hidden = up;
+  clearTimeout(checkServer.timer);
+  if (!up && !$("landing").hidden) checkServer.timer = setTimeout(checkServer, 4000);
+  if (!up) {
+    document.querySelectorAll("[data-start]").forEach((b) => { b.disabled = true; });
+    return;
   }
   try { state.assist = await (await fetch("/api/assist")).json(); } catch { /* optional */ }
   $("assistRow").hidden = !state.assist.enabled;

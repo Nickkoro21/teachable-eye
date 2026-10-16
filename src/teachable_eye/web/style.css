@@ -225,3 +225,5 @@ body.mirror #video, body.mirror #frozen { transform: scaleX(-1); }
   font-size: 13.5px; }
 .opinion button { margin-top: 6px; padding: 6px 12px; border-radius: 999px; background: var(--known);
   color: #04201c; font-weight: 700; }
+.offline { margin: 0; padding: 10px 12px; border-radius: 12px; font-size: 13.5px;
+  background: #ef444422; border: 1px solid #ef444466; color: #fecaca; }
