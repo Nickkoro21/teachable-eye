@@ -51,6 +51,7 @@ Every item is scored **pass/fail**. The feature is done when all automated check
 | H10 | Photo mode on a scene with 2 taught objects | Both listed with decision and top-3 neighbours |
 | H11 | 🧪 Test set on: save views of taught objects and of never-taught ones; Memory → Test set → Run evaluation | Views listed per label, not in memory; result table and full report open |
 | H12 | Claude help on: Suggest names on a photo with a person in it; Ask Claude on an uncertain object; Summary; Ask about memory | Names pre-filled except the person's box (🔒); every answer shown, nothing saved without Save |
+| H13 | Two objects on screen, none tapped: TEACH asks to choose; tap one, drag it, drag a corner, ✕ the other; pinch-zoom a photo and box a small part (e.g. a button) | Only the active box is taught; the moved/resized box is the one taught; the dropped box does not come back; zoomed boxes line up with the picture |
 
 ## Sign-off
 - [ ] Level 1 all pass

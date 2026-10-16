@@ -236,3 +236,8 @@ body.mirror #video, body.mirror #frozen { transform: scaleX(-1); }
 .sheetmic { flex: 0 0 auto; width: 54px; border-radius: 12px; background: #ffffff1f; font-size: 22px; }
 /* the live view has no evidence card any more; only Claude's opinion */
 #card.compact { background: none; padding: 0; text-align: center; }
+
+/* pinch zoom: back to 1× */
+.zoomreset { position: fixed; right: 12px; z-index: 6; top: calc(env(safe-area-inset-top) + 62px);
+  background: #0b1220d0; border: 1px solid #ffffff44; }
+#frozen { transform-origin: 0 0; }
