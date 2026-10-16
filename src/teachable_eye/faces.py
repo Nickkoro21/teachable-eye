@@ -81,7 +81,6 @@ GUARD_SCORE = 0.5   # lower than SCORE: when in doubt, it is a face
 def has_face(img):
     """True when `img` (BGR) shows a face. Used before any picture may leave
     the device (assist.py): a crop with a face is never sent."""
-    global _guard
     h, w = img.shape[:2]
     if h < 10 or w < 10:
         return False
@@ -92,13 +91,54 @@ def has_face(img):
     if max(small.shape[:2]) < 320:
         f = 320 / max(small.shape[:2])
         small = cv2.resize(small, None, fx=f, fy=f, interpolation=cv2.INTER_LINEAR)
+    return len(_guard_detect(small)) > 0
+
+
+def _guard_detect(img):
+    """YuNet at the lower GUARD_SCORE: rows of [x, y, w, h, 5 landmarks, score]."""
+    global _guard
     with _lock:
         if _guard is None:
             _guard = cv2.FaceDetectorYN.create(_model(YUNET), "", (320, 320),
                                                GUARD_SCORE, 0.3, 5000)
-        _guard.setInputSize((small.shape[1], small.shape[0]))
-        _, found = _guard.detect(small)
-    return found is not None and len(found) > 0
+        _guard.setInputSize((img.shape[1], img.shape[0]))
+        _, found = _guard.detect(img)
+    return [] if found is None else list(found)
+
+
+def find_face(frame, nbox, pad=0.3):
+    """Look for a face inside a box the user drew (normalised x1, y1, x2, y2).
+
+    The region (plus a margin) is scaled to ~640 px so small or turned faces
+    the live detector missed can be found, with a lower confidence floor: the
+    user has already said there is a face there. Returns (normalised face
+    box, aligned 112x112 face) for the largest face, or None.
+    """
+    h, w = frame.shape[:2]
+    x1, y1, x2, y2 = nbox
+    bw, bh = (x2 - x1) * w, (y2 - y1) * h
+    X1, Y1 = max(0, int(x1 * w - pad * bw)), max(0, int(y1 * h - pad * bh))
+    X2, Y2 = min(w, int(x2 * w + pad * bw)), min(h, int(y2 * h + pad * bh))
+    region = frame[Y1:Y2, X1:X2]
+    if region.size == 0 or min(region.shape[:2]) < 8:
+        return None
+    scale = DETECT_SIDE / max(region.shape[:2])
+    view = cv2.resize(region, None, fx=scale, fy=scale,
+                      interpolation=cv2.INTER_AREA if scale < 1 else cv2.INTER_LINEAR)
+    rows = _guard_detect(view)
+    if not rows:
+        return None
+    row = max(rows, key=lambda r: r[2] * r[3]).copy()
+    row[:14] /= scale                        # back to region pixels
+    # ... and to frame pixels: positions only (x, y and the 5 landmarks),
+    # never the width and height at indices 2 and 3
+    row[[0, 4, 6, 8, 10, 12]] += X1
+    row[[1, 5, 7, 9, 11, 13]] += Y1
+    with _lock:
+        aligned = _sface().alignCrop(frame, row)
+    fx, fy, fw, fh = (float(v) for v in row[:4])
+    box = [max(0.0, fx / w), max(0.0, fy / h), min(1.0, (fx + fw) / w), min(1.0, (fy + fh) / h)]
+    return [round(v, 4) for v in box], aligned
 
 
 class FaceTracker:

@@ -572,3 +572,27 @@ class PeopleTask(VisualTask):
             detector or faces.FaceTracker(), embed or faces.embed_faces,
             memory or TaskMemory(config.DATA_DIR / "memory" / self.name,
                                  faces.SFACE_DIM, self.name, config.PEOPLE))
+
+    # A box drawn on a photo means "there is a face here": look for one in it
+    # (larger, more sensitive) and snap the box to it. Faces must be aligned
+    # from their landmarks, so a plain crop of the box would not do.
+    supports_regions = True
+
+    def region(self, box):
+        from teachable_eye.faces import find_face
+        with self._lock:
+            if self._still_frame is None:
+                raise LookupError("take a photo first")
+            found = find_face(self._still_frame, box)
+            if found is None:
+                raise LookupError("no face found in that box")
+            face_box, aligned = found
+            rid = 1000 + len(self._still_crops)
+            self._still_crops[rid] = aligned
+            vec = self.embed([aligned])[0]
+            return dict({"id": rid, "box": face_box, "focus": False,
+                         "background": False, "manual": True},
+                        **self.memory.recognize(vec).to_json())
+
+    def follow(self, box):
+        raise LookupError("faces are followed by the face detector itself")

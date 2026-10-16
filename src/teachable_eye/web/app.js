@@ -37,6 +37,11 @@ const I18N = {
     augNote: "Each view also stores variants: zoom, mirror, darker (see Memory).",
     augNotePeople: "Each view also stores variants: mirror, darker (see Memory).",
     saving: "Saving…",
+    pickFiles: "🖼 Label pictures / video", browseMem: "🗂 Memory & evaluation",
+    next: "Next ▶", backVideo: "🎞 Video", useFrame: "Use this frame", done: "Done",
+    hintPicture: "Picture: tap a box to make it active; drag it, its corners, ✕; drag on empty space for a new box; pinch to zoom. TEACH, 🎤 or All, then Next ▶.",
+    pictureOf: "Picture {0} of {1}", frameAt: "frame at {0} s", notMedia: "Not a picture or a video: {0}",
+    allDone: "All pictures done.",
     say: "🎤 Say", listening: "Listening… release when you are done.",
     micShort: "Hold 🎤 while you speak, then let go.", heard: "Heard: “{0}”",
     micError: "Microphone unavailable: {0}", recognising: "Recognising…",
@@ -104,6 +109,11 @@ const I18N = {
     augNote: "Κάθε όψη αποθηκεύει και παράγωγα: ζουμ, καθρέφτης, σκοτεινό (δες Μνήμη).",
     augNotePeople: "Κάθε όψη αποθηκεύει και παράγωγα: καθρέφτης, σκοτεινό (δες Μνήμη).",
     saving: "Αποθήκευση…",
+    pickFiles: "🖼 Ετικέτες σε εικόνες / βίντεο", browseMem: "🗂 Μνήμη & αξιολόγηση",
+    next: "Επόμενη ▶", backVideo: "🎞 Βίντεο", useFrame: "Χρήση αυτού του καρέ", done: "Τέλος",
+    hintPicture: "Εικόνα: πάτα ένα πλαίσιο για να γίνει ενεργό· σύρε το, τις γωνίες του, ✕· σύρε σε κενό σημείο για νέο· δύο δάχτυλα για ζουμ. ΜΑΘΕ, 🎤 ή Όλα, και μετά Επόμενη ▶.",
+    pictureOf: "Εικόνα {0} από {1}", frameAt: "καρέ στα {0} s", notMedia: "Δεν είναι εικόνα ή βίντεο: {0}",
+    allDone: "Τελείωσαν οι εικόνες.",
     say: "🎤 Πες", listening: "Ακούω… άφησε το κουμπί όταν τελειώσεις.",
     micShort: "Κράτα πατημένο το 🎤 όσο μιλάς και μετά άφησέ το.", heard: "Άκουσα: «{0}»",
     micError: "Το μικρόφωνο δεν είναι διαθέσιμο: {0}", recognising: "Αναγνώριση…",
@@ -180,7 +190,12 @@ const state = {
   dismissed: new Set(),  // live track ids the user dropped with ✕
   view: { s: 1, x: 0, y: 0 },   // pinch zoom of the paused photo (screen space)
   pinch: null, camZoom: null,
+  source: "camera",      // or "picture": a file from the device, no camera
+  files: [], fileIdx: 0, browse: false,
 };
+
+// Only the live camera picture is shown mirrored (front camera).
+function mirrored() { return state.facing === "user" && state.source === "camera"; }
 
 // Claude help is offered only when the PC has it, this phone opted in, and
 // the task is objects (faces are never sent).
@@ -258,6 +273,7 @@ async function checkServer() {
 }
 
 async function start(task) {
+  leavePictures();
   $("landing").hidden = true;
   setTask(task);
   if (!state.stream) await startCamera();
@@ -267,6 +283,7 @@ async function start(task) {
 }
 
 function goHome() {
+  leavePictures();
   state.running = false;
   stopBurst(false);
   closeTeach();
@@ -419,7 +436,7 @@ function mapper(srcW, srcH) {
   const cw = overlay.clientWidth, ch = overlay.clientHeight;
   const scale = Math.max(cw / srcW, ch / srcH);
   const dx = (cw - srcW * scale) / 2, dy = (ch - srcH * scale) / 2;
-  const mirror = state.facing === "user";
+  const mirror = mirrored();
   return ([x1, y1, x2, y2]) => {
     const w = (x2 - x1) * srcW * scale;
     let x = dx + x1 * srcW * scale;
@@ -440,7 +457,7 @@ function toFrame(px, py) {
     px = (px - state.view.x) / state.view.s;
     py = (py - state.view.y) / state.view.s;
   }
-  if (state.facing === "user") px = cw - px;
+  if (mirrored()) px = cw - px;
   const clamp = (v) => Math.min(1, Math.max(0, v));
   return [clamp((px - dx) / (src.w * scale)), clamp((py - dy) / (src.h * scale))];
 }
@@ -708,7 +725,7 @@ function updateHint() {
   const hint = $("hint");
   if (!state.running || state.burst) { hint.textContent = ""; return; }
   const rows = source().rows;
-  if (state.still) hint.textContent = t("hintPhoto");
+  if (state.still) hint.textContent = t(state.source === "picture" ? "hintPicture" : "hintPhoto");
   else if (rows.some((r) => r.id === state.selected)) hint.textContent = t("hintActive");
   else if (rows.length) hint.textContent = t("hintChoose");
   else hint.textContent = state.task === "people" ? t("hintPeopleNone") : t("hintNone");
@@ -1180,8 +1197,8 @@ async function takePhoto() {
   await capturePhoto();
 }
 
-async function capturePhoto() {
-  const blob = await snapshot(STILL_SIDE, 0.9);
+async function capturePhoto(ready) {
+  const blob = ready || await snapshot(STILL_SIDE, 0.9);
   if (!blob) return false;
   const res = await fetch(`/api/still?task=${state.task}`, { method: "POST", body: blob,
     headers: { "Content-Type": "image/jpeg" } });
@@ -1193,8 +1210,9 @@ async function capturePhoto() {
   state.still = { rows: data.rows, w: data.w, h: data.h };
   state.selected = null;
   resetView();
-  $("photoBtn").hidden = true; $("liveBtn").hidden = false;
+  $("photoBtn").hidden = true; $("liveBtn").hidden = state.source === "picture";
   $("videoBtn").hidden = true; $("labelAllBtn").hidden = false;
+  showPictureButtons();
   renderCard(); updateHint();
   return true;
 }
@@ -1240,7 +1258,7 @@ function resetView() {
 
 function applyView() {
   const v = state.view, cw = overlay.clientWidth;
-  const mirror = state.facing === "user" ? ` translateX(${cw}px) scaleX(-1)` : "";
+  const mirror = mirrored() ? ` translateX(${cw}px) scaleX(-1)` : "";
   frozen.style.transform = `translate(${v.x}px, ${v.y}px) scale(${v.s})${mirror}`;
   $("zoomReset").hidden = !(state.still ? v.s > 1.01 : state.camZoom && state.camZoom.value > state.camZoom.min);
 }
@@ -1321,6 +1339,120 @@ function backToLive() {
   renderCard(); updateHint();
 }
 
+// -- memory & evaluation without the camera ------------------------------------
+// From the landing page: look at memory, the test set and evaluations (e.g.
+// on the PC) without opening a camera, so the phone keeps its connection.
+function browseMemory() {
+  state.browse = true;
+  $("landing").hidden = true;
+  $("memTaskSeg").hidden = false;
+  document.querySelectorAll("#memTaskSeg button").forEach((b) => {
+    b.classList.toggle("on", b.dataset.mtask === state.task);
+    b.disabled = !state.tasks.includes(b.dataset.mtask);
+  });
+  openMemory();
+}
+
+// -- pictures and video files (no camera) ----------------------------------------
+// Pictures open like a paused photo with every photo tool; a video plays in
+// a player and any frame can be taken out to label. Only the chosen frame,
+// scaled to 1920 px, goes to the PC; nothing is uploaded otherwise.
+async function openFiles(list) {
+  const files = [...list].filter((f) => /^(image|video)\//.test(f.type));
+  [...list].filter((f) => !files.includes(f)).forEach((f) => toast(t("notMedia", f.name), 4000));
+  if (!files.length) return;
+  state.files = files; state.fileIdx = 0;
+  state.source = "picture";
+  state.running = true;
+  state.selected = null;
+  $("landing").hidden = true;
+  setConn("offline"); $("conn").hidden = true; $("flipBtn").hidden = true;
+  document.body.classList.remove("mirror");
+  await showFile(0);
+}
+
+async function showFile(i) {
+  state.fileIdx = i;
+  const f = state.files[i];
+  if (f.type.startsWith("video/")) { openVideo(f); return; }
+  const img = await loadImage(f);
+  await useImage(img, img.naturalWidth, img.naturalHeight);
+  toast(t("pictureOf", i + 1, state.files.length), 2500);
+}
+
+function loadImage(file) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => { URL.revokeObjectURL(img.src); resolve(img); };
+    img.onerror = () => reject(new Error(t("notMedia", file.name)));
+    img.src = URL.createObjectURL(file);
+  });
+}
+
+// Draw a picture (or a video frame) into the shared canvas and treat it as a photo.
+async function useImage(src, w, h) {
+  const scale = Math.min(1, STILL_SIDE / Math.max(w, h));
+  grab.width = Math.round(w * scale); grab.height = Math.round(h * scale);
+  grab.getContext("2d").drawImage(src, 0, 0, grab.width, grab.height);
+  const blob = await new Promise((r) => grab.toBlob(r, "image/jpeg", 0.92));
+  closeMulti();
+  await capturePhoto(blob);
+}
+
+function showPictureButtons() {
+  const pic = state.source === "picture";
+  const f = state.files[state.fileIdx];
+  const video = pic && f && f.type.startsWith("video/");
+  const more = pic && state.fileIdx < state.files.length - 1;
+  $("nextBtn").hidden = !(video || more);
+  $("nextBtn").textContent = video ? t("backVideo") : t("next");
+}
+
+function nextPicture() {
+  const f = state.files[state.fileIdx];
+  if (f && f.type.startsWith("video/")) { $("vplayer").hidden = false; return; }
+  if (state.fileIdx < state.files.length - 1) showFile(state.fileIdx + 1);
+  else toast(t("allDone"));
+}
+
+function openVideo(file) {
+  const v = $("vfile");
+  if (v.dataset.name !== file.name) {
+    if (v.src) URL.revokeObjectURL(v.src);
+    v.src = URL.createObjectURL(file);
+    v.dataset.name = file.name;
+  }
+  $("vplayer").hidden = false;
+  $("vInfo").textContent = file.name;
+}
+
+async function useVideoFrame() {
+  const v = $("vfile");
+  if (!v.videoWidth) return;
+  v.pause();
+  $("vplayer").hidden = true;
+  await useImage(v, v.videoWidth, v.videoHeight);
+  toast(t("frameAt", v.currentTime.toFixed(1)), 2500);
+}
+
+function closeVideo() {
+  const v = $("vfile");
+  v.pause();
+  $("vplayer").hidden = true;
+  if (state.fileIdx < state.files.length - 1) showFile(state.fileIdx + 1);
+  else goHome();
+}
+
+function leavePictures() {
+  if (state.source !== "picture") return;
+  const v = $("vfile");
+  v.pause();
+  if (v.src) { URL.revokeObjectURL(v.src); v.removeAttribute("src"); v.dataset.name = ""; }
+  $("vplayer").hidden = true;
+  state.source = "camera"; state.files = []; state.fileIdx = 0;
+  $("conn").hidden = false; $("flipBtn").hidden = false; $("nextBtn").hidden = true;
+}
+
 // -- tasks --------------------------------------------------------------------
 function setTask(task) {
   state.task = task; state.rows = []; state.selected = null;
@@ -1330,6 +1462,12 @@ function setTask(task) {
 function switchTask(task) {
   if (task === state.task) return;
   if (!state.tasks.includes(task)) { toast(t("peopleOff")); return; }
+  if (state.source === "picture") {        // same picture, other task
+    setTask(task);
+    closeMulti();
+    grab.toBlob((blob) => capturePhoto(blob), "image/jpeg", 0.9);
+    return;
+  }
   stopBurst(false);
   setTask(task);
   backToLive();
@@ -1520,9 +1658,6 @@ overlay.addEventListener("pointerdown", (ev) => {
     state.drag.close = target.id;
     return;
   }
-  // faces are aligned from their landmarks: people boxes are chosen or
-  // dropped, never moved or resized by hand
-  if (state.task === "people") return;
   const cs = [[bx, by], [bx + bw, by], [bx, by + bh], [bx + bw, by + bh]];
   const i = cs.findIndex(([qx, qy]) => Math.hypot(qx - x, qy - y) < 30);
   const inside = x >= bx && x <= bx + bw && y >= by && y <= by + bh;
@@ -1647,7 +1782,31 @@ $("photoBtn").onclick = takePhoto;
 $("liveBtn").onclick = resumeLive;
 $("memBtn").onclick = openMemory;
 $("conn").onclick = () => { diag.on = !diag.on; renderDiag(); };
-$("closeMem").onclick = () => { $("memory").hidden = true; };
+$("browseBtn").onclick = browseMemory;
+$("pickBtn").onclick = () => { $("fileInput").value = ""; $("fileInput").click(); };
+$("fileInput").onchange = (ev) => openFiles(ev.target.files);
+$("nextBtn").onclick = nextPicture;
+$("vUse").onclick = useVideoFrame;
+$("vDone").onclick = closeVideo;
+$("vBack").onclick = () => { $("vfile").pause(); $("vfile").currentTime = Math.max(0, $("vfile").currentTime - 1); };
+$("vFwd").onclick = () => { $("vfile").pause(); $("vfile").currentTime += 1; };
+document.querySelectorAll("#memTaskSeg button").forEach((b) => {
+  b.onclick = () => {
+    setTask(b.dataset.mtask);
+    document.querySelectorAll("#memTaskSeg button").forEach((x) => x.classList.toggle("on", x === b));
+    openMemory();
+  };
+});
+// PC: drop pictures or a video anywhere on the page
+document.addEventListener("dragover", (ev) => { ev.preventDefault(); });
+document.addEventListener("drop", (ev) => {
+  ev.preventDefault();
+  if (ev.dataTransfer && ev.dataTransfer.files.length) openFiles(ev.dataTransfer.files);
+});
+$("closeMem").onclick = () => {
+  $("memory").hidden = true;
+  if (state.browse) { state.browse = false; $("memTaskSeg").hidden = true; $("landing").hidden = false; }
+};
 $("wipeBtn").onclick = async () => {
   if (confirm(t("wipeConfirm"))) { await api("/api/wipe", { task: "people" }); renderMemory(); }
 };

@@ -223,3 +223,28 @@ def test_encoder_registry_dims():
     from teachable_eye.encoders import ENCODERS, encoder_dim
     assert encoder_dim("dinov2-large") == 2048 and encoder_dim("clip-b32") == 512
     assert set(config.DEFAULT_OBJECT_BANDS) == set(ENCODERS)
+
+
+def test_people_box_drawn_on_a_photo_snaps_to_a_face(tmp_path, monkeypatch):
+    """A box drawn on a face is searched for a face (aligned from its
+    landmarks); with no face in it the user is told so."""
+    from teachable_eye import faces
+    from teachable_eye.tasks import PeopleTask
+    monkeypatch.setattr(config, "DATA_DIR", tmp_path)
+    mem = TaskMemory(tmp_path / "p", 4, "people", config.TaskThresholds(0.4, 0.06))
+    task = PeopleTask(detector=FakeDetector(), embed=fake_embed, memory=mem)
+    with pytest.raises(LookupError, match="photo"):
+        task.region([0.1, 0.1, 0.5, 0.5])
+    task.still(np.zeros((100, 100, 3), np.uint8))
+    monkeypatch.setattr(faces, "find_face", lambda frame, box: None)
+    with pytest.raises(LookupError, match="no face"):
+        task.region([0.1, 0.1, 0.5, 0.5])
+    face = np.full((112, 112, 3), 120, np.uint8)
+    monkeypatch.setattr(faces, "find_face", lambda frame, box: ([0.2, 0.2, 0.4, 0.45], face))
+    row = task.region([0.1, 0.1, 0.5, 0.5])
+    assert row["box"] == [0.2, 0.2, 0.4, 0.45] and row["manual"]
+    assert task.teach_held(task.hold(row["id"], from_still=True), "person-a")
+    assert mem.count() == 3                       # the face + mirror + darker
+    with pytest.raises(LookupError):
+        task.follow([0.1, 0.1, 0.5, 0.5])
+    mem.close()

@@ -110,8 +110,9 @@ object crops and skipped a third crop in which YuNet found a face (~800 tokens i
 - **FOD (foreign object debris) detection** on runway/apron surfaces as a second demo: learn what the
   clean surface looks like, flag patches that differ (anomaly detection, Phase 7 technique). Came from
   a phone test where a chewing gum on grass was not a detector "object".
-- **Video file import** (upload a whole phone video; offline tracking collects views across the file;
-  automatic approach segmentation) — bridge to Phase 2.
+- **Video file import** — first step built 2026-10-16 (R47: play a video file, pick frames, label them
+  like photos). Still to do: offline tracking that collects views across the whole file, automatic
+  approach segmentation — bridge to Phase 2.
 - **AGPL-free detector**: Ultralytics (YOLOE, BoT-SORT) is AGPL-3.0; compare RF-DETR / RT-DETR /
   OWLv2 / Grounding DINO (Apache-2.0) before any non-open-source use.
 - **OCR** (PaddleOCR / EasyOCR, Apache-2.0, Greek supported): aircraft registration on the fuselage

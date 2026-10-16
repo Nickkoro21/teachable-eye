@@ -22,6 +22,7 @@ Every item is scored **pass/fail**. The feature is done when all automated check
 | A13 | Server flow: teach, save a test view, run evaluation (JSON + Markdown written, no vectors in the JSON), report path sanitised, delete a test view | R34, R35, R17 |
 | A14 | Claude help is refused when `ASSIST` is off and for the people task | R36 |
 | A15 | Name suggestions: a face crop is not sent (and no call at all if nothing is sendable); the request uses structured output and the refusal fallback; usage is logged | R36, R37, R41 |
+| A17 | A box drawn on a photo in People mode: no photo → error; no face → "no face found"; a face → snapped box, taught with its variants; faces are not followed | R48 |
 | A16 | Second opinion returns only a candidate label (never an invented one), never sends a face; questions and summaries send no pictures and no per-view rows | R38-R40 |
 
 ## Level 2: Measured (recorded in the PR description)
@@ -52,6 +53,7 @@ Every item is scored **pass/fail**. The feature is done when all automated check
 | H11 | 🧪 Test set on: save views of taught objects and of never-taught ones; Memory → Test set → Run evaluation | Views listed per label, not in memory; result table and full report open |
 | H12 | Claude help on: Suggest names on a photo with a person in it; Ask Claude on an uncertain object; Summary; Ask about memory | Names pre-filled except the person's box (🔒); every answer shown, nothing saved without Save |
 | H13 | Two objects on screen, none tapped: TEACH asks to choose; tap one, drag it, drag a corner, ✕ the other; pinch-zoom a photo and box a small part (e.g. a button) | Only the active box is taught; the moved/resized box is the one taught; the dropped box does not come back; zoomed boxes line up with the picture |
+| H14 | PC: 🗂 Memory & evaluation while the phone streams; 🖼 a few phone pictures and a short video: box, teach, Next, Use this frame; People: draw a box round a small or turned face | The phone keeps its camera; pictures and frames can be labelled like photos; the drawn face box snaps to the face (or says none was found) |
 
 ## Sign-off
 - [ ] Level 1 all pass

@@ -25,6 +25,11 @@
       <div class="land-actions">
         <button class="big wide" data-start="objects" data-i18n="startObjects">Start · Objects</button>
         <button class="big wide alt" data-start="people" data-i18n="startPeople">Start · People</button>
+        <div class="land-more">
+          <button id="pickBtn" class="pill wide2" data-i18n="pickFiles">🖼 Label pictures / video</button>
+          <button id="browseBtn" class="pill wide2" data-i18n="browseMem">🗂 Memory &amp; evaluation</button>
+        </div>
+        <input type="file" id="fileInput" accept="image/*,video/*" multiple hidden>
       </div>
       <p id="offline" class="offline" hidden>
         <b data-i18n="offlineTitle">The PC is not answering.</b><br>
@@ -81,7 +86,22 @@
     <button id="micBtn" class="round mic" data-i18n="say">🎤 Say</button>
     <button id="videoBtn" class="round" data-i18n="video">Video</button>
     <button id="labelAllBtn" class="round" data-i18n="labelAllShort" hidden>All</button>
+    <button id="nextBtn" class="round" data-i18n="next" hidden>Next ▶</button>
   </footer>
+
+  <!-- a video file: play, stop where you like, label that frame -->
+  <div id="vplayer" class="vplayer" hidden>
+    <video id="vfile" playsinline controls></video>
+    <div class="vrow">
+      <button id="vBack" class="pill">◀ 1s</button>
+      <button id="vUse" class="big" data-i18n="useFrame">Use this frame</button>
+      <button id="vFwd" class="pill">1s ▶</button>
+    </div>
+    <div class="vrow">
+      <span id="vInfo" class="muted"></span>
+      <button id="vDone" class="pill" data-i18n="done">Done</button>
+    </div>
+  </div>
 
   <!-- name sheet -------------------------------------------------------- -->
   <div id="sheet" class="sheet" hidden>
@@ -141,6 +161,10 @@
   <div id="memory" class="panel" hidden>
     <div class="panel-head">
       <h2 id="memTitle" data-i18n="memory">Memory</h2>
+      <div class="seg memtask" id="memTaskSeg" hidden>
+        <button data-mtask="objects" class="on" data-i18n="objects">Objects</button>
+        <button data-mtask="people" data-i18n="people">People</button>
+      </div>
       <button id="closeMem" class="icon">✕</button>
     </div>
     <div class="seg memtabs" id="memTabs">
