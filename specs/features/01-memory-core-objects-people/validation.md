@@ -12,6 +12,7 @@ Every item is scored **pass/fail**. The feature is done when all automated check
 | A4 | Close and reopen the shard: the examples are still there | R5 |
 | A5 | Per-track vote: alternating recognitions do not flip the displayed label until there is a majority | R8 |
 | A6 | Label parsing: EN and EL phrases map to the expected labels; empty or silent input is rejected | R21 |
+| A6b | Voice: WAV of any rate/channels becomes 16 kHz mono; short, long, silent and non-WAV input rejected before the model; `/api/voice` returns the label in the requested language, 422 on silence, 503 when off | R21 |
 | A7 | Server smoke test: an HTTPS app starts; a synthetic JPEG over `/ws` returns valid JSON with normalised boxes in [0, 1] | R9, R10 |
 | A8 | A second `/ws` connection replaces the first and resets the tracker | R11 |
 | A9 | `tools/check_no_media.py --all` passes, and `git ls-files` contains no file under `data/` | N1 |

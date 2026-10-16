@@ -75,8 +75,11 @@ AUGMENT = os.environ.get("AUGMENT", "on").strip().lower() not in ("off", "0", "f
 # Where the ONNX encoders run: auto (CUDA when available), cuda, or cpu.
 ENCODER_DEVICE = _choice("ENCODER_DEVICE", "auto", {"auto", "cuda", "cpu"})
 
-# Whisper language for voice teach: en (default) or el.
+# Whisper language when the phone does not say (it sends the UI language).
 VOICE_LANGUAGE = _choice("VOICE_LANGUAGE", "en", {"en", "el"})
+
+# Voice teach (hold 🎤 and say "this is my hat"); Whisper runs on this PC.
+VOICE = os.environ.get("VOICE", "on").strip().lower() not in ("off", "0", "false")
 
 PORT = _num("TEYE_PORT", 8765, int)
 

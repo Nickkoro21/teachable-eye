@@ -25,7 +25,7 @@ Feature `01-memory-core-objects-people`, branch `feature/01-memory-core-objects-
       views-needed curve, `tools/evaluate.py --encoders` — **numbers on the author's data still to record (M3-M6)**
 - [x] **TG8 Optional Claude help** (built 2026-10-16, R36-R41): name suggestions, second opinion,
       evaluation summary, questions about memory — opt-in, objects only, faces never sent
-- [ ] **TG7 Voice teach** (Whisper `en`/`el`, "this is my hat" / «αυτό είναι το καπέλο μου»)
+- [x] **TG7 Voice teach** (built 2026-10-16): hold 🎤 and say "this is my hat" / «αυτό είναι το καπέλο μου»; Whisper large-v3-turbo on the GPU, in the app's language — Greek still to be tried on the phone (H8)
 - [ ] Validation sign-off (validation.md Levels 1–3), SDD deep review with sub-agents, merge to `main`
 
 ## Phase 2: Video import + aircraft detection & tracking

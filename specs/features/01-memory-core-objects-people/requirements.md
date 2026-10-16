@@ -40,7 +40,7 @@
 - **R20**: Mode switch between Objects and People. The two use separate shards, and "Forget everyone" wipes the people shard.
 
 **Voice (TG7)**
-- **R21**: Hold-to-talk on the phone sends a WAV to the PC. Local Whisper (`onnx-asr`, language `en` by default, `el` selectable) transcribes it, and the label is parsed from "this is (my) X" / «αυτό είναι (ο/η/το) X». Silence is rejected.
+- **R21** *(built 2026-10-16)*: Hold-to-talk on the phone (🎤 in the bottom bar, and next to the name field) records 16 kHz mono PCM and sends a WAV to the PC. Local Whisper (`onnx-asr`, `onnx-community/whisper-large-v3-turbo` fp16 on the GPU) transcribes it **in the app's language** (en/el, the landing-page switch), and the label is parsed from "this is (my) X" / «αυτό είναι (ο/η/το) X». The 🎤 in the bottom bar freezes the chosen box at press time (like TEACH) and opens the name sheet pre-filled; nothing is saved until Save (and consent for people). Recordings shorter than 0.4 s, longer than 15 s or silent are rejected before the model runs; audio is never stored. `VOICE=off` disables it.
 
 ## Non-functional
 

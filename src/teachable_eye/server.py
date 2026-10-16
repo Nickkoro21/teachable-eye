@@ -364,6 +364,27 @@ def create_app(tasks, cert_path=None, info=None):
         return FileResponse(path, media_type="image/jpeg",
                             headers={"Cache-Control": "max-age=86400"})
 
+    # -- voice teach (R21) ---------------------------------------------------------
+    # Its own worker: transcribing must not hold up the live frames.
+    voice_pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="voice")
+
+    @app.post("/api/voice")
+    async def voice_label(request: Request, lang: str = "en"):
+        """A WAV of "this is my hat" -> {"text", "label"}. Nothing is stored."""
+        if not config.VOICE:
+            raise HTTPException(503, "voice teach is off on the PC (VOICE=off)")
+        from teachable_eye import voice
+        data = await request.body()
+        if len(data) > 4_000_000:
+            raise HTTPException(413, "recording too long")
+        try:
+            return await asyncio.get_running_loop().run_in_executor(
+                voice_pool, voice.transcribe, data, lang)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from None
+        except Exception as exc:                 # model missing, GPU error, ...
+            raise HTTPException(503, f"voice not available: {exc}") from None
+
     # -- test set and evaluation (R34, R35) -------------------------------------
 
     @app.get("/api/eval")

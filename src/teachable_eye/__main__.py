@@ -46,6 +46,12 @@ def main():
         tasks["people"] = PeopleTask()
     if not tasks:
         raise SystemExit("no tasks loaded")
+    if config.VOICE:
+        # voice teach is optional: load Whisper in the background so the
+        # server is ready at once and the first 🎤 is still quick
+        import threading
+        from teachable_eye import voice
+        threading.Thread(target=voice.warm, daemon=True, name="voice-warm").start()
 
     lan = args.host not in ("127.0.0.1", "localhost")
     ip = args.advertise or (lan_ip() if lan else "127.0.0.1")

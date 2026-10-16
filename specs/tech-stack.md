@@ -23,7 +23,7 @@
 | People | **YuNet** face detector (OpenCV Zoo, Apache-2.0) | **SFace** (OpenCV Zoo, Apache-2.0) | k-NN + threshold; faces never leave the device |
 | Approach — system | Aircraft detection + tracking | Crop embedding for gear (k-NN) + **landing-light detector** (brightness/saturation blob in the tracked box, temporal persistence) | Rule: `secured` iff gear-down ∧ light-on, else `possibly-unsecured`/`uncertain`; vote over N frames |
 | Approach — glide path | Aircraft tracking (fixed ground camera) | Trajectory → fixed-length vector (resampled position/size over time) | k-NN against labelled approaches + `uncertain` |
-| Voice (labels/queries) | — | Whisper (onnx-asr), `en` default, `el` supported | — |
+| Voice (labels/queries) | Phone records 16 kHz PCM while 🎤 is held | **Whisper large-v3-turbo** (`onnx-community`, MIT, fp16, ~1.5 GB) via onnx-asr on ONNX Runtime GPU; language = the app's (en/el) | `labels.parse_label` → pre-filled name, user confirms |
 | Optional cloud help (objects only) | YuNet face check before any picture leaves | **Claude** via the official `anthropic` SDK (`claude-opus-5-5`, structured JSON output, server-side refusal fallback) | Advice only: names, second opinion, summaries, metadata Q&A — never a decision |
 
 Excluded: InsightFace/ArcFace pretrained weights (non-commercial licence).

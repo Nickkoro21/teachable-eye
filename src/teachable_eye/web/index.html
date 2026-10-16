@@ -77,6 +77,7 @@
     <button id="photoBtn" class="round" data-i18n="photo">Photo</button>
     <button id="liveBtn" class="round" data-i18n="live" hidden>Live</button>
     <button id="teachBtn" class="big" data-i18n="teach">TEACH</button>
+    <button id="micBtn" class="round mic" data-i18n="say">🎤 Say</button>
     <button id="videoBtn" class="round" data-i18n="video">Video</button>
     <button id="labelAllBtn" class="round" data-i18n="labelAllShort" hidden>All</button>
   </footer>
@@ -92,7 +93,10 @@
       </div>
       <small data-i18n="orNew">…or type a new name</small>
       <small class="augnote" data-i18n="augNote">Each view also stores variants: zoom, mirror, darker (see Memory).</small>
-      <input id="labelInput" autocomplete="off" maxlength="60" required>
+      <div class="namerow">
+        <input id="labelInput" autocomplete="off" maxlength="60" required>
+        <button type="button" id="sheetMic" class="sheetmic" aria-label="hold to speak">🎤</button>
+      </div>
       <label class="consent evalrow">
         <input type="checkbox" id="evalMode">
         <span data-i18n="evalMode">🧪 Test set: save for evaluation, do not teach</span>

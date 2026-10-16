@@ -9,7 +9,7 @@ const I18N = {
     tagline: "Show it a few examples. It remembers — on your own device.",
     step1t: "Point", step1: "the camera at something; boxes appear around what it sees.",
     step2t: "Choose", step2: "a box (tap it; tap again for the next one under your finger).",
-    step3t: "Teach", step3: "it a name — or use Video to capture several views while you move around it.",
+    step3t: "Teach", step3: "it a name: type it, or hold 🎤 and say “this is my hat”. Video captures several views while you move around it.",
     step4t: "Check", step4: "— green means known, orange means unsure, grey means unknown.",
     startObjects: "Start · Objects", startPeople: "Start · People",
     privacy: "Everything it learns stays on your PC. Faces are stored only with the person's consent and can be forgotten at any time.",
@@ -32,6 +32,9 @@ const I18N = {
     augNote: "Each view also stores variants: zoom, mirror, darker (see Memory).",
     augNotePeople: "Each view also stores variants: mirror, darker (see Memory).",
     saving: "Saving…",
+    say: "🎤 Say", listening: "Listening… release when you are done.",
+    micShort: "Hold 🎤 while you speak, then let go.", heard: "Heard: “{0}”",
+    micError: "Microphone unavailable: {0}", recognising: "Recognising…",
     aug_zoom_center: "zoom", aug_flip: "mirror", aug_darker: "darker", variant: "variant",
     liveTapHint: "Nothing there. Take a Photo to mark your own box.",
     known: "known", uncertain: "uncertain", unknown: "unknown", pending: "looking…",
@@ -68,7 +71,7 @@ const I18N = {
     tagline: "Δείξ' του λίγα παραδείγματα. Θυμάται — στη δική σου συσκευή.",
     step1t: "Στόχευσε", step1: "την κάμερα σε κάτι· εμφανίζονται πλαίσια γύρω από ό,τι βλέπει.",
     step2t: "Διάλεξε", step2: "ένα πλαίσιο (πάτα το· ξαναπάτα για το επόμενο κάτω από το δάχτυλο).",
-    step3t: "Μάθε", step3: "του ένα όνομα — ή πάτα Βίντεο για πολλές όψεις καθώς κινείσαι γύρω του.",
+    step3t: "Μάθε", step3: "του ένα όνομα: γράψ' το, ή κράτα το 🎤 και πες «αυτό είναι το καπέλο μου». Το Βίντεο παίρνει πολλές όψεις καθώς κινείσαι γύρω του.",
     step4t: "Έλεγξε", step4: "— πράσινο: γνωστό, πορτοκαλί: αβέβαιο, γκρι: άγνωστο.",
     startObjects: "Έναρξη · Αντικείμενα", startPeople: "Έναρξη · Πρόσωπα",
     privacy: "Ό,τι μαθαίνει μένει στο PC σου. Τα πρόσωπα αποθηκεύονται μόνο με συναίνεση και διαγράφονται όποτε θέλεις.",
@@ -91,6 +94,9 @@ const I18N = {
     augNote: "Κάθε όψη αποθηκεύει και παράγωγα: ζουμ, καθρέφτης, σκοτεινό (δες Μνήμη).",
     augNotePeople: "Κάθε όψη αποθηκεύει και παράγωγα: καθρέφτης, σκοτεινό (δες Μνήμη).",
     saving: "Αποθήκευση…",
+    say: "🎤 Πες", listening: "Ακούω… άφησε το κουμπί όταν τελειώσεις.",
+    micShort: "Κράτα πατημένο το 🎤 όσο μιλάς και μετά άφησέ το.", heard: "Άκουσα: «{0}»",
+    micError: "Το μικρόφωνο δεν είναι διαθέσιμο: {0}", recognising: "Αναγνώριση…",
     aug_zoom_center: "ζουμ", aug_flip: "καθρέφτης", aug_darker: "σκοτεινό", variant: "παράγωγο",
     liveTapHint: "Δεν υπάρχει κάτι εκεί. Πάτα Φωτό για να σημειώσεις δικό σου πλαίσιο.",
     known: "γνωστό", uncertain: "αβέβαιο", unknown: "άγνωστο", pending: "κοιτάζω…",
@@ -558,20 +564,14 @@ function currentTarget() {
 function renderCard() {
   const card = $("card");
   const r = currentTarget();
-  if (!r || r.decision === "pending" || state.burst) { card.hidden = true; return; }
-  // Unknown: the "nearest" examples are not near at all (e.g. 0.13), so they
-  // are noise. The card appears only to offer Claude's opinion, if enabled.
-  const unknown = r.decision === "unknown";
-  const asked = state.opinion && state.opinion.rid === r.id;
-  if (unknown && !assistOk() && !asked) { card.hidden = true; return; }
-  const name = r.label || (r.guess ? `${t("maybe")} ${r.guess}?` : t("unknown"));
-  const nbrs = (unknown ? [] : r.neighbours || []).map((n) => `
-    <div class="nbr">${n.thumb ? `<img src="/thumb/${state.task}/${n.thumb}" alt="">` : ""}
-      ${escapeHtml(n.label)}<br>${n.score.toFixed(2)}${n.aug ? ` ${AUG_ICON[n.aug] || ""}` : ""}</div>`).join("");
-  card.innerHTML = `<div class="head"><span class="dec" style="color:${COLORS[r.decision]}">
-      ${escapeHtml(name)}</span><small>${t(r.decision)} · ${r.score.toFixed(2)}</small></div>
-    ${nbrs ? `<small>${t("nearest")}</small><div class="nbrs">${nbrs}</div>` : ""}
-    ${opinionHtml(r)}`;
+  // No evidence card on the live view: it covered the picture and the box's
+  // own caption already says known / maybe / unknown (author's feedback,
+  // 2026-10-16). The card only carries Claude's opinion, when asked for.
+  const asked = r && state.opinion && state.opinion.rid === r.id;
+  const offer = r && assistOk() && (r.decision === "uncertain" || r.decision === "unknown");
+  if (!r || r.decision === "pending" || state.burst || !(asked || offer)) { card.hidden = true; return; }
+  card.innerHTML = opinionHtml(r);
+  card.classList.toggle("compact", !asked);
   card.hidden = false;
 }
 
@@ -705,7 +705,7 @@ function openNameSheet(holdId, thumbs, r) {
   $("consent").checked = false;
   setEvalMode(state.evalMode);
   $("sheet").hidden = false;
-  loadChoices(r);
+  return loadChoices(r);
 }
 
 // 🧪 Test set (R34): views go to data/eval, never to memory. The choice is
@@ -958,6 +958,139 @@ async function saveMulti(ev) {
   closeMulti();
   toast(state.evalMode ? t("savedTestMany", done) : t("taughtMany", done));
   renderCard();
+}
+
+// -- voice teach (R21) --------------------------------------------------------
+// Hold 🎤 and say "this is my hat" / «αυτό είναι το καπέλο μου». The phone
+// records 16 kHz mono PCM (Web Audio), the PC transcribes it with Whisper in
+// the app's language and returns the label; the name sheet opens pre-filled
+// and nothing is saved until Save. Audio is never stored.
+const VOICE_RATE = 16000, VOICE_MAX_S = 12;
+const mic = { on: false, ctx: null, stream: null, src: null, node: null, chunks: [], samples: 0 };
+
+async function micStart() {
+  if (mic.on) return false;
+  mic.on = true; mic.chunks = []; mic.samples = 0;
+  try {
+    mic.ctx = mic.ctx || new (window.AudioContext || window.webkitAudioContext)();
+    await mic.ctx.resume();
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+    if (!mic.on) { stream.getTracks().forEach((tr) => tr.stop()); return false; }  // let go during the prompt
+    mic.stream = stream;
+  } catch (err) {
+    mic.on = false;
+    toast(t("micError", err.message || err.name), 5000);
+    return false;
+  }
+  mic.src = mic.ctx.createMediaStreamSource(mic.stream);
+  mic.node = mic.ctx.createScriptProcessor(4096, 1, 1);
+  mic.node.onaudioprocess = (e) => {
+    if (!mic.on || mic.samples > VOICE_MAX_S * mic.ctx.sampleRate) return;
+    const chunk = new Float32Array(e.inputBuffer.getChannelData(0));
+    mic.chunks.push(chunk); mic.samples += chunk.length;
+  };
+  mic.src.connect(mic.node); mic.node.connect(mic.ctx.destination);
+  toast(t("listening"), VOICE_MAX_S * 1000);
+  return true;
+}
+
+// Stop recording; a 16-bit PCM WAV at 16 kHz, or null if nothing was heard.
+function micStop() {
+  const was = mic.on;
+  mic.on = false;
+  try { mic.src && mic.src.disconnect(); mic.node && mic.node.disconnect(); } catch { /* already */ }
+  if (mic.stream) mic.stream.getTracks().forEach((tr) => tr.stop());
+  mic.stream = mic.src = mic.node = null;
+  if (!was || !mic.samples) return null;
+  const all = new Float32Array(mic.samples);
+  let at = 0;
+  for (const c of mic.chunks) { all.set(c, at); at += c.length; }
+  return encodeWav(resample(all, mic.ctx.sampleRate, VOICE_RATE), VOICE_RATE);
+}
+
+function resample(x, from, to) {
+  if (from === to) return x;
+  const n = Math.floor(x.length * to / from), out = new Float32Array(n), step = from / to;
+  for (let i = 0; i < n; i++) {               // average the samples each output covers
+    const a = Math.floor(i * step), b = Math.min(x.length, Math.floor((i + 1) * step));
+    let sum = 0;
+    for (let j = a; j < b; j++) sum += x[j];
+    out[i] = b > a ? sum / (b - a) : x[a] || 0;
+  }
+  return out;
+}
+
+function encodeWav(x, rate) {
+  const buf = new ArrayBuffer(44 + x.length * 2), v = new DataView(buf);
+  const str = (o, s) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
+  str(0, "RIFF"); v.setUint32(4, 36 + x.length * 2, true); str(8, "WAVE");
+  str(12, "fmt "); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+  v.setUint32(24, rate, true); v.setUint32(28, rate * 2, true); v.setUint16(32, 2, true);
+  v.setUint16(34, 16, true); str(36, "data"); v.setUint32(40, x.length * 2, true);
+  for (let i = 0; i < x.length; i++) {
+    const s = Math.max(-1, Math.min(1, x[i]));
+    v.setInt16(44 + i * 2, s < 0 ? s * 0x8000 : s * 0x7fff, true);
+  }
+  return new Blob([buf], { type: "audio/wav" });
+}
+
+// Press-and-hold on `btn`: start() when pressed (returns false to cancel),
+// done(wav) when released.
+function holdToTalk(btn, start, done) {
+  let active = false;
+  btn.addEventListener("pointerdown", async (ev) => {
+    ev.preventDefault();
+    if (active || state.burst || state.counting) return;
+    active = true;
+    btn.classList.add("rec");
+    try { btn.setPointerCapture(ev.pointerId); } catch { /* fine */ }
+    if (!(await start())) { active = false; btn.classList.remove("rec"); micStop(); }
+  });
+  const end = async () => {
+    if (!active) return;
+    active = false;
+    btn.classList.remove("rec");
+    await done(micStop());
+  };
+  btn.addEventListener("pointerup", end);
+  btn.addEventListener("pointercancel", end);
+  btn.addEventListener("contextmenu", (ev) => ev.preventDefault());
+}
+
+async function transcribe(wav) {
+  if (!wav) { toast(t("micShort"), 3500); return null; }
+  toast(t("recognising"), 8000);
+  try {
+    const res = await fetch(`/api/voice?lang=${state.lang}`, {
+      method: "POST", body: wav, headers: { "Content-Type": "audio/wav" } });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) { toast(data.error || res.statusText, 5000); return null; }
+    toast(t("heard", data.text), 4000);
+    return data;
+  } catch (err) { toast(err.message, 5000); return null; }
+}
+
+// 🎤 on the live view: freeze the chosen box at once (as TEACH does), record
+// while held, then open the name sheet with what was heard.
+const say = { hold: null, target: null, preview: null };
+async function sayStart() {
+  const r = currentTarget();
+  if (!r) { toast(t("nothingSelected")); return false; }
+  say.target = r;
+  say.preview = cropPreview(r.box);
+  say.hold = api("/api/hold", { task: state.task, id: r.id, still: !!state.still })
+    .then((res) => res.hold).catch((err) => { toast(err.message, 4000); return null; });
+  return micStart();
+}
+
+async function sayDone(wav) {
+  const res = await transcribe(wav);
+  const hold = await say.hold;
+  if (!res || !hold) return;
+  await openNameSheet(hold, say.preview ? [say.preview] : [], say.target);
+  $("labelInput").value = res.label || res.text;
+  markChoice();
 }
 
 // -- photo mode ---------------------------------------------------------------
@@ -1256,6 +1389,11 @@ $("labelAllBtn").onclick = openMulti;
 $("multiCancel").onclick = closeMulti;
 $("multiAdd").onclick = () => toast(t("drawNow"), 3500);
 $("multiSuggest").onclick = suggestNames;
+holdToTalk($("micBtn"), sayStart, sayDone);
+holdToTalk($("sheetMic"), () => micStart(), async (wav) => {
+  const res = await transcribe(wav);
+  if (res) { $("labelInput").value = res.label || res.text; markChoice(); }
+});
 $("evalMode").onchange = (ev) => setEvalMode(ev.target.checked);
 $("multiEval").onchange = (ev) => setEvalMode(ev.target.checked);
 $("assistToggle").onchange = (ev) => { state.assistOn = ev.target.checked; store.set("assist", state.assistOn ? "1" : "0"); };
