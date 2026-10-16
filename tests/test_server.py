@@ -148,3 +148,21 @@ def test_app_shell_is_never_stale(setup):
     assert page.headers["cache-control"] == "no-cache"
     assert "/static/app.js?v=" in page.text and "/static/style.css?v=" in page.text
     assert client.get("/static/app.js").headers["cache-control"] == "no-cache"
+
+
+def test_a8_dead_previous_camera_does_not_kill_the_new_one(setup, monkeypatch):
+    """Phone lost Wi-Fi: closing its stale socket raises. The new connection
+    must still work (it used to die too, in a reconnect loop)."""
+    from starlette.websockets import WebSocket
+
+    async def dead_close(self, code=1000, reason=None):
+        raise WebSocketDisconnect(code=1006)
+
+    client, task = setup
+    with client.websocket_connect("/ws?task=objects") as first:
+        first.send_bytes(jpeg())
+        first.receive_json()
+        monkeypatch.setattr(WebSocket, "close", dead_close)
+        with client.websocket_connect("/ws?task=objects") as second:
+            second.send_bytes(jpeg())
+            assert "rows" in second.receive_json()

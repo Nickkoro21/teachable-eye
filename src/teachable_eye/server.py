@@ -184,9 +184,15 @@ def create_app(tasks, cert_path=None, info=None):
         previous = state["active"]
         state["active"] = socket
         if previous is not None:
+            # The old phone connection may already be dead (Wi-Fi dropped,
+            # screen locked): closing it then raises. That must never take
+            # the NEW connection down with it — it did, in a loop, and the
+            # phone's dot blinked white/red with no frames processed.
             try:
                 await previous.close(code=4000, reason="replaced by a new camera")
-            except RuntimeError:
+            except (RuntimeError, WebSocketDisconnect, OSError):
+                pass
+            except Exception:                    # any other close failure
                 pass
         current = tasks[task]
         await run(current.reset)
