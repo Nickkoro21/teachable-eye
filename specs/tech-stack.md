@@ -1,6 +1,6 @@
 # Tech Stack
 
-> Status: **v1.2** (2026-10-15: object encoder stepped up to DINOv2-large; "As built" section) — choices marked *(decide by measurement)* are settled by a benchmark inside a feature, not up front.
+> Status: **v1.3** (2026-10-16: test set + evaluation, optional Claude help; v1.2: DINOv2-large) — choices marked *(decide by measurement)* are settled by a benchmark inside a feature, not up front.
 
 ## Core
 
@@ -24,6 +24,7 @@
 | Approach — system | Aircraft detection + tracking | Crop embedding for gear (k-NN) + **landing-light detector** (brightness/saturation blob in the tracked box, temporal persistence) | Rule: `secured` iff gear-down ∧ light-on, else `possibly-unsecured`/`uncertain`; vote over N frames |
 | Approach — glide path | Aircraft tracking (fixed ground camera) | Trajectory → fixed-length vector (resampled position/size over time) | k-NN against labelled approaches + `uncertain` |
 | Voice (labels/queries) | — | Whisper (onnx-asr), `en` default, `el` supported | — |
+| Optional cloud help (objects only) | YuNet face check before any picture leaves | **Claude** via the official `anthropic` SDK (`claude-opus-5-5`, structured JSON output, server-side refusal fallback) | Advice only: names, second opinion, summaries, metadata Q&A — never a decision |
 
 Excluded: InsightFace/ArcFace pretrained weights (non-commercial licence).
 
@@ -41,7 +42,10 @@ Excluded: InsightFace/ArcFace pretrained weights (non-commercial licence).
 | `faces.py` | YuNet + greedy IoU tracker + landmark-aligned SFace embeddings |
 | `follow.py` | `FollowTrack`: VitTrack from a user box; replaces an overlapping detector box (IoU ≥ 0.5); ends after 8 unsure frames |
 | `encoders.py` | Encoder registry, one interface (`embed`, `dim`): `clip-b32`, `unicom-b16` (fastembed ONNX), `siglip2-base`, `dinov2-base`, `dinov2-large` (transformers, fp16 CUDA) |
-| `server.py` | FastAPI: `/ws` frames (one active camera), `/api/{hold,teach,burst,still,region,follow,unfollow,memory,rename,forget,forget_example,wipe,status}`, thumbnails; app shell served `no-cache` with content-hashed asset URLs |
+| `server.py` | FastAPI: `/ws` frames (one active camera), `/api/{hold,teach,burst,still,region,follow,unfollow,memory,rename,forget,forget_example,wipe,status}`, `/api/eval*`, `/api/reports/*.md`, `/api/assist*`, thumbnails; app shell served `no-cache` with content-hashed asset URLs |
+| `evalset.py` | The test set: `data/eval/<task>/<id>.{jpg,json}`, never used for recognition |
+| `evaluation.py` | Pure-array evaluation: outcomes (correct / wrong / uncertain / missed / rejected / false accept), recommended bands (zero dangerous errors), separation, augmentation and views-needed ablations, logistic-regression baseline, Markdown report |
+| `assist.py` | Optional Claude help (off unless `ASSIST=on`): objects only, face check, small JPEGs, usage log |
 | `web/` | Phone PWA (vanilla JS): landing page, live overlay, tap/cycle selection, photo pause with draw/resize, TEACH sheet with label chooser, Video burst, Memory with variants, EN/EL, front/back camera, 3-2-1, diagnostics |
 
 **Encoder step-up (2026-10-15)** — `tools/bench_encoders.py` on two small local multi-view sets (author's phone thumbnails: 13 images / 3 labels; course objects: 16 / 6):
@@ -104,7 +108,8 @@ any closed or commercial use, switch to an Apache-2.0 detector (RF-DETR, RT-DETR
 ## Environment & secrets
 
 - `env.ps1` sets all caches under `D:\AI assistant on Device Memory\.cache` (keep C: untouched).
-- Secrets come only from environment variables: `QDRANT_URL`, `QDRANT_API_KEY`, `HF_TOKEN`. Never written to files in the repo; `.env` is git-ignored.
+- Secrets come only from environment variables: `QDRANT_URL`, `QDRANT_API_KEY`, `HF_TOKEN`, `ANTHROPIC_API_KEY` (optional). Never written to files in the repo; `.env` is git-ignored.
+- Anthropic API usage is per token and separate from any Claude subscription; every call's tokens are logged locally (`data/reports/assist-usage.jsonl`).
 - Qdrant Cloud: use project-prefixed collection names; never delete collections we did not create (the cluster is shared).
 
 ## Licences

@@ -9,7 +9,7 @@ and stores examples when the user teaches. Each task owns one TaskMemory.
 teach-from-video bursts, thumbnails). A concrete task only chooses its
 detector/tracker, its encoder and its memory:
 
-    objects  YOLOE + BoT-SORT  -> masked crop   -> CLIP ViT-B/32 (512-d)
+    objects  YOLOE + BoT-SORT  -> masked crop   -> OBJECT_ENCODER (DINOv2-large)
     people   YuNet + IoU track -> aligned face  -> SFace (128-d)
 
 A tracker must offer: tracks (dict id -> detect.Track), process(frame, now),
@@ -323,6 +323,83 @@ class VisualTask:
         """Hold and teach in one step (used by tests and tools)."""
         return self.teach_held(self.hold(tid), label)
 
+    def still_crops(self, rids):
+        """Crops of rows of the last photo (None where a row is unknown)."""
+        with self._lock:
+            return [self._still_crops.get(r) for r in rids]
+
+    def example_images(self, label, n=2):
+        """Up to `n` pictures of a taught label: kept crops, else thumbnails."""
+        out = []
+        for e in self.memory.examples():
+            if e.get("label") != label:
+                continue
+            for folder, name in ((self.crops, e.get("crop")), (self.thumbs, e.get("thumb"))):
+                img = cv2.imread(str(folder / name)) if name else None
+                if img is not None:
+                    out.append(img)
+                    break
+            if len(out) >= n:
+                break
+        return out
+
+    def held_crops(self, hid):
+        """The crops of a hold, left in place (Claude's opinion reads them)."""
+        held = self._holds.get(hid)
+        if held is None:
+            raise LookupError("the selection expired; press TEACH again")
+        return held[0]
+
+    # -- test set and evaluation (R34, R35) --------------------------------------
+
+    @property
+    def evalset(self):
+        if getattr(self, "_evalset", None) is None:
+            from teachable_eye.evalset import EvalStore
+            self._evalset = EvalStore(self.name)
+        return self._evalset
+
+    def eval_held(self, hid, label):
+        """Save the views of a hold to the test set, NOT to memory."""
+        with self._lock:
+            held = self._holds.pop(hid, None)
+            if held is None:
+                raise LookupError("the selection expired; press TEACH again")
+            try:
+                ids = [self.evalset.add(c, label, self.source) for c in held[0]]
+            except ValueError:
+                self._holds[hid] = held
+                raise
+            return len(ids)
+
+    def run_eval(self, extras=True):
+        """Score the test set against the live memory; save JSON + Markdown.
+
+        Returns the report (dict) and the file stem under data/reports/.
+        """
+        import json
+        from teachable_eye.evaluation import evaluate, to_markdown
+        with self._lock:
+            items = self.evalset.items()
+            images = [self.evalset.image(it["id"]) for it in items]
+            vectors = self.embed(images) if images else []
+            for it, vec in zip(items, vectors):
+                it["vector"] = vec
+            report = evaluate(self.memory.points(), items, self.memory.thresholds,
+                              task=self.name, encoder=getattr(self, "encoder", None),
+                              extras=extras)
+        for it in report["items"]:
+            it.pop("vector", None)
+        folder = config.DATA_DIR / "reports"
+        folder.mkdir(parents=True, exist_ok=True)
+        stem = "eval-{}-{}{}".format(
+            self.name, time.strftime("%Y%m%d-%H%M%S"),
+            f"-{report['encoder']}" if report.get("encoder") else "")
+        (folder / f"{stem}.json").write_text(json.dumps(report, indent=1, ensure_ascii=False),
+                                             encoding="utf-8")
+        (folder / f"{stem}.md").write_text(to_markdown(report), encoding="utf-8")
+        return report, stem
+
     # -- photo mode --------------------------------------------------------------
 
     supports_regions = False   # user-drawn boxes (see region)
@@ -450,7 +527,7 @@ def object_memory_dir(encoder):
 
 
 class ObjectsTask(VisualTask):
-    """YOLOE + tracking → masked crop → CLIP → memory (R7, R8)."""
+    """YOLOE + tracking → masked crop → image encoder → memory (R7, R8)."""
 
     name = "objects"
     supports_regions = True

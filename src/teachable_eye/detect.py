@@ -101,8 +101,8 @@ class Track:
     def norm_box(self):
         w, h = self.frame_wh
         x1, y1, x2, y2 = self.box
-        return [round(x1 / w, 4), round(y1 / h, 4),
-                round(x2 / w, 4), round(y2 / h, 4)]
+        return [round(float(x1) / w, 4), round(float(y1) / h, 4),
+                round(float(x2) / w, 4), round(float(y2) / h, 4)]
 
 
 def weights_path():

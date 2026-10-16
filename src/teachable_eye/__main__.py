@@ -36,7 +36,7 @@ def main():
     tasks = {}
     if "objects" in wanted:
         from teachable_eye.tasks import ObjectsTask
-        print("loading objects task (YOLOE + CLIP)...")
+        print(f"loading objects task (YOLOE + {config.OBJECT_ENCODER})...")
         tasks["objects"] = ObjectsTask()
         tasks["objects"].detector.warm()
         encoders.warm_clip()

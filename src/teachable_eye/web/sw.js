@@ -1,6 +1,6 @@
 // App-shell cache so the PWA installs and opens fast. The API and the camera
 // socket always go to the network: results must be live, never cached.
-const CACHE = "teye-shell-v16";
+const CACHE = "teye-shell-v17";
 const SHELL = ["/", "/static/icon.svg", "/manifest.webmanifest"];
 
 self.addEventListener("install", (e) => {

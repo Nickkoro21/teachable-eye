@@ -30,6 +30,11 @@
         <button id="landLang" class="pill">Ελληνικά</button>
         <span id="landStatus" class="muted"></span>
       </div>
+      <label id="assistRow" class="consent assistrow" hidden>
+        <input type="checkbox" id="assistToggle">
+        <span><b data-i18n="assistTitle">✨ Claude help (cloud, optional)</b><br>
+        <span data-i18n="assistNote">Name suggestions, a second opinion, report summaries. Objects only; pictures with a face never leave the PC.</span></span>
+      </label>
       <p class="privacy" data-i18n="privacy">Everything it learns stays on your PC. Faces are stored only with the person's consent and can be forgotten at any time.</p>
     </div>
   </section>
@@ -47,6 +52,7 @@
       <button data-task="objects" class="on" data-i18n="objects">Objects</button>
       <button data-task="people" data-i18n="people">People</button>
     </div>
+    <span id="evalBadge" class="pill evalbadge" hidden data-i18n="testBadge">🧪 test</span>
     <button id="conn" class="dot" title="" aria-label="connection"></button>
     <button id="flipBtn" class="icon" aria-label="switch camera">⟲</button>
     <button id="memBtn" class="icon" aria-label="memory">☰</button>
@@ -83,6 +89,10 @@
       <small data-i18n="orNew">…or type a new name</small>
       <small class="augnote" data-i18n="augNote">Each view also stores variants: zoom, mirror, darker (see Memory).</small>
       <input id="labelInput" autocomplete="off" maxlength="60" required>
+      <label class="consent evalrow">
+        <input type="checkbox" id="evalMode">
+        <span data-i18n="evalMode">🧪 Test set: save for evaluation, do not teach</span>
+      </label>
       <label id="consentRow" hidden>
         <input type="checkbox" id="consent">
         <span data-i18n="consent">This person agreed to be remembered on this device.</span>
@@ -101,7 +111,12 @@
       <small data-i18n="labelAllHint">Each number matches a box on the photo. Empty = skip.</small>
       <div id="multiList"></div>
       <button type="button" id="multiAdd" class="addbox" data-i18n="addBox">+ New box: drag on the photo</button>
+      <button type="button" id="multiSuggest" class="addbox suggest" hidden data-i18n="suggestNames">✨ Suggest names (Claude)</button>
       <datalist id="labelOptions"></datalist>
+      <label class="consent evalrow">
+        <input type="checkbox" id="multiEval">
+        <span data-i18n="evalMode">🧪 Test set: save for evaluation, do not teach</span>
+      </label>
       <label id="multiConsentRow" class="consent" hidden>
         <input type="checkbox" id="multiConsent">
         <span data-i18n="consentAll">These people agreed to be remembered on this device.</span>
@@ -119,7 +134,24 @@
       <h2 id="memTitle" data-i18n="memory">Memory</h2>
       <button id="closeMem" class="icon">✕</button>
     </div>
-    <div id="memList"></div>
+    <div class="seg memtabs" id="memTabs">
+      <button data-tab="memory" class="on" data-i18n="memory">Memory</button>
+      <button data-tab="test" data-i18n="testSet">Test set</button>
+    </div>
+    <div id="memPane">
+      <form id="askForm" class="ask" hidden>
+        <input id="askInput" autocomplete="off" maxlength="300">
+        <button type="submit" class="pill">✨</button>
+      </form>
+      <div id="askOut" class="answer" hidden></div>
+      <div id="memList"></div>
+    </div>
+    <div id="testPane" hidden>
+      <p class="muted" data-i18n="testIntro">Test views are never taught. Save views of taught things in other light, angles and places — and things never taught (they should come out unknown). Then run the evaluation.</p>
+      <button id="runEval" class="runeval" data-i18n="runEval">Run evaluation</button>
+      <div id="evalResult"></div>
+      <div id="testList"></div>
+    </div>
     <button id="wipeBtn" class="danger" hidden data-i18n="forgetEveryone">Forget everyone</button>
   </div>
 

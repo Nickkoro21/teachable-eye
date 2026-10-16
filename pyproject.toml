@@ -33,6 +33,7 @@ dependencies = [
     # Evaluation baseline (logistic regression).
     "scikit-learn>=1.6",
     "transformers>=4.56",
+    "anthropic>=1.15.0",
 ]
 
 [project.scripts]

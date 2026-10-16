@@ -79,3 +79,10 @@ ENCODER_DEVICE = _choice("ENCODER_DEVICE", "auto", {"auto", "cuda", "cpu"})
 VOICE_LANGUAGE = _choice("VOICE_LANGUAGE", "en", {"en", "el"})
 
 PORT = _num("TEYE_PORT", 8765, int)
+
+# Optional help from Claude (Anthropic API): name suggestions, a second
+# opinion, report summaries, questions about memory. Off unless ASSIST=on;
+# the key comes only from ANTHROPIC_API_KEY. Objects only: faces and
+# people's names are never sent (mission: cloud help is optional).
+ASSIST = os.environ.get("ASSIST", "off").strip().lower() in ("on", "1", "true")
+ASSIST_MODEL = os.environ.get("ASSIST_MODEL", "claude-opus-5-5").strip() or "claude-opus-5-5"

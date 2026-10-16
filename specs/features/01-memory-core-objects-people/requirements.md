@@ -27,12 +27,12 @@
 - **R15**: UI strings exist in English (default) and Greek, switchable in the page and remembered on the phone.
 
 **Evaluation (TG5)**
-- **R16**: `tools/evaluate.py --task objects|people --source DIR` reads `<label>_<n>.<ext>` images from a local folder and splits each label into teach and eval sets (default: first 2 teach, rest eval). It reports:
+- **R16** *(superseded 2026-10-16 by R34-R35: the author chose in-app collection, method A)*: `tools/evaluate.py --task objects|people --source DIR` reads `<label>_<n>.<ext>` images from a local folder and splits each label into teach and eval sets (default: first 2 teach, rest eval). It reports:
   - a confusion matrix including `uncertain` and `unknown`
   - a threshold sweep
   - an open-set check: labels held out entirely must come back `unknown`/`uncertain`
   - a comparison with logistic regression on the same embeddings
-- **R17**: Reports are written to `data/reports/<timestamp>-<task>.{md,json}` and are never committed.
+- **R17**: Reports are written to `data/reports/` as `.md` + `.json` and are never committed.
 
 **People (TG6)**
 - **R18**: The people task detects faces with YuNet and embeds them with SFace (OpenCV Zoo, Apache-2.0). Model files are downloaded into `data/models/` on first use.
@@ -50,7 +50,7 @@
 - **N4 Portability:** runs on Windows 11 with the repository's `uv` environment, with caches on D: through `env.ps1`. GPU is optional with a CPU fallback, slower but correct.
 - **N5 Attribution:** every adapted file or function from the robot repo carries a header comment naming the source and the Apache-2.0 licence.
 - **N6 Language:** code, comments and docs are in English. Greek appears only in UI strings and voice parsing.
-- **N7 No secrets:** no credentials are needed for this feature; Qdrant Cloud is not used.
+- **N7 No secrets:** Qdrant Cloud is not used. The only credential is the optional `ANTHROPIC_API_KEY` (R36), read from the environment, never written to a file.
 
 ## Added during implementation
 
@@ -66,3 +66,16 @@
 - **R31**: The teach sheet matches existing labels ignoring case and accents (ποτήρι = ποτηρι).
 - **R32** *(done 2026-10-15)*: On a paused photo, label several boxes at once: a list of every box with its own label field (existing-label chooser, pre-filled from memory, empty = skip) and a single Save that teaches them all, each with its variants.
 - **R33**: In "Label all" the photo stays touchable: selecting a row highlights its box, whose corners can be dragged to fix it (the row keeps its number and typed name); dragging on empty space adds a new box as the next numbered row.
+
+**Test set and evaluation (TG5, method A — 2026-10-16)**
+- **R34**: TEACH and Label all have a sticky **🧪 Test set** switch. When on, the held views are saved to `data/eval/<task>/` (crop JPEG + JSON label) and **never** to memory; a badge shows the mode. People views still need consent. A test label that memory does not know is a *stranger* (its right answer is `unknown`). Memory has a **Test set** tab listing test views per label (taught / never taught), each deletable.
+- **R35**: **Run evaluation** (phone, Test set tab) embeds every test view with the live encoder and scores it against the live memory (variants count as their view). It reports, at the current bands and at the **recommended** bands: correct, **dangerous** (confident wrong name, or a stranger taken for something taught), uncertain, missed, strangers rejected; a confusion table; same/different separation (AUC, gap); nearest-label accuracy; with/without augmentation; accuracy vs number of views per label; k-NN vs logistic regression. The recommended threshold is the lowest with zero dangerous errors on the test set; the margin puts 90 % of strangers below the uncertain band (0.02-0.15). Reports: `data/reports/eval-<task>-<time>-<encoder>.{json,md}`; the phone links the Markdown. Thresholds are changed by the author in `.env`, never automatically.
+- **R35b**: `tools/evaluate.py --encoders a,b,c` compares object encoders on the same taught views (kept crops, else thumbnails, plus variants) and the same test set; it reads the taught views from the running server, so the server can keep running.
+
+**Optional help from Claude (TG8 — 2026-10-16)**
+- **R36**: Off unless `ASSIST=on` on the PC **and** the user ticks "Claude help" on the phone's landing page (default off). The key comes only from `ANTHROPIC_API_KEY`. Objects only: the people task is refused, and every picture is checked with YuNet first; a picture with a face is never sent. Pictures go as JPEG ≤ 384 px. Every call's token usage is logged locally to `data/reports/assist-usage.jsonl`. The app works fully without it.
+- **R37**: **Suggest names** in Label all: the empty rows' crops (no faces) are sent once; the suggestions only pre-fill the fields (marked), the user reviews and presses Save. Existing labels are sent so their wording is reused.
+- **R38**: **Ask Claude** on an `uncertain`/`unknown` object: the crop and up to 2 kept pictures of each of the nearest taught labels are sent; Claude answers which label (or none), how sure, and why. Shown under the memory's own answer, never instead of it; "Teach as …" opens the name sheet pre-filled, the user confirms.
+- **R39**: **Summary for managers** under an evaluation result: the report numbers (no pictures, no per-view rows) are rewritten in the UI language; saved next to the report.
+- **R40**: **Ask about memory** (Memory tab): answered from objects metadata only (labels, view counts, first/last taught dates, test-set counts); no pictures, nothing about people.
+- **R41**: Requests use `claude-opus-5-5` (`ASSIST_MODEL`) with structured JSON output where an answer is parsed, low effort for names/opinions, and the server-side refusal fallback; a refusal, a missing key or a network error gives a clear message and changes nothing.

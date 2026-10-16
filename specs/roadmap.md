@@ -1,6 +1,6 @@
 # Roadmap
 
-> Status: **v1.2** (2026-10-15 evening: label-all, encoder step-up, Anthropic API ideas). Each phase is delivered with the SDD feature loop: `specs/features/NN-name/{feature-plan,requirements,validation}.md` → implement on a feature branch → validate (human-in-the-loop) → replan.
+> Status: **v1.3** (2026-10-16: in-app test set + evaluation, optional Claude help built). Each phase is delivered with the SDD feature loop: `specs/features/NN-name/{feature-plan,requirements,validation}.md` → implement on a feature branch → validate (human-in-the-loop) → replan.
 > Phases 0–6 lead to **Demo v1** (approval). Phases 7+ follow once the project is approved and better equipment is available.
 
 ## Phase 0: Constitution & repo
@@ -20,8 +20,11 @@ Feature `01-memory-core-objects-people`, branch `feature/01-memory-core-objects-
       landing page; close-ups; teach-time augmentation with visible variants; user-drawn boxes on photos;
       pause → fix box → follow it (VitTrack); front/back camera; 3-2-1 countdown; diagnostics line;
       cache-busting so phones never mix old/new files; forgetting also deletes thumbnail files
-- [ ] **TG5 Evaluation tool**: held-out split, confusion matrix, threshold sweep, k-NN vs logistic-regression
-      baseline, with/without augmentation — needed to calibrate thresholds for the author's phone
+- [x] **TG5 Evaluation tool** (built 2026-10-16, R34-R35b): 🧪 Test set collected in the app, Run
+      evaluation on the phone, recommended bands, k-NN vs logistic regression, with/without augmentation,
+      views-needed curve, `tools/evaluate.py --encoders` — **numbers on the author's data still to record (M3-M6)**
+- [x] **TG8 Optional Claude help** (built 2026-10-16, R36-R41): name suggestions, second opinion,
+      evaluation summary, questions about memory — opt-in, objects only, faces never sent
 - [ ] **TG7 Voice teach** (Whisper `en`/`el`, "this is my hat" / «αυτό είναι το καπέλο μου»)
 - [ ] Validation sign-off (validation.md Levels 1–3), SDD deep review with sub-agents, merge to `main`
 
@@ -72,16 +75,22 @@ Observations from phone tests to carry forward:
 
 **2026-10-15 (evening)** — Multi-label a photo done (R32, R33: fix corners / add boxes inside the list). Object encoder stepped up from CLIP ViT-B/32 to **DINOv2-large** after `tools/bench_encoders.py` (only DINOv2 separated same/different objects on the phone set; details in tech-stack). Per-encoder memories, kept crops, `tools/reembed.py`; the author's 13 views migrated. Thresholds for DINOv2-large are provisional (0.45 / 0.10) until evaluation. 42 tests passing.
 
+**2026-10-16** — Collection method **A** chosen and built: 🧪 Test set switch (TEACH / Label all) →
+`data/eval/`, Memory → Test set tab → Run evaluation (report JSON + Markdown, recommended bands with zero
+dangerous errors). Encoder comparison on the same data: `tools/evaluate.py --encoders`. Optional Claude
+help (Anthropic API, `claude-opus-5-5`) built as TG8; a live smoke test suggested Greek names for two
+object crops and skipped a third crop in which YuNet found a face (~800 tokens in total). Fixed an overnight crash in People mode
+(numpy float32 in face boxes). 59 tests passing.
+
 ## Next steps (in order)
 1. ~~**Multi-label a photo**~~ — done 2026-10-15 (R32): on a paused photo, "Label all" lists every box
    (detected and user-drawn) with a thumbnail and a label field each (existing-label chooser,
    pre-filled when memory already knows it, empty = skip); tapping a row highlights its box; one
    Save teaches all (each with its variants). Built on the existing per-box hold.
-2. **Data collection (author, 2026-10-16)** + TG5 evaluation tool: held-out views per object, never-taught
-   "strangers", confusion matrix, dangerous-error rate, threshold sweep → recommended bands, views-needed
-   curve, with/without augmentation, k-NN vs logistic regression, and encoder comparison on the same data.
-   Collection method still to choose: (A) in-app "save for evaluation" switch in TEACH / Label all,
-   saved to `data/eval/` and not to memory — recommended; or (B) phone photos named `<label>_<n>.jpg`.
+2. **Data collection (author, 2026-10-16)** with the 🧪 Test set switch (method A, built): teach each
+   object from a few views (Video), then save test views of it in other light / angles / places, plus
+   never-taught "strangers". Run evaluation → write the recommended bands to `.env` if the author agrees;
+   `tools/evaluate.py --encoders` to confirm DINOv2-large. Record M3-M6 in validation.
 3. TG7 voice teach (EN/EL).
 4. Validation sign-off, SDD deep review (sub-agents), merge feature 01 into `main`, changelog.
 5. Replan: licence review of the detector (see tech-stack), then Phase 2 (video file import + aircraft
@@ -108,9 +117,9 @@ Observations from phone tests to carry forward:
 - Model size ladder per platform: PC GPU (large/base) now; phone on-device later needs small/nano
   variants (e.g. YOLOE-S, MobileCLIP) — decided by the same evaluation.
 
-### Anthropic API (the author has a key) — optional, off by default
+### Anthropic API (the author has a key) — optional, off by default — **built as TG8 (2026-10-16)**
 Cloud calls conflict with "on-device first", so any use is opt-in, per action, never for faces and
-never for the approach decision. Candidates (Claude with vision):
+never for the approach decision. Built (first four; see requirements R36-R41):
 - **Name suggestions** in "Label all": send the box crops (objects only) and pre-fill suggested names;
   the user still confirms every label.
 - **Second opinion on `uncertain`** objects during data collection (assist labelling, not deciding).
@@ -118,7 +127,9 @@ never for the approach decision. Candidates (Claude with vision):
 - **Natural-language questions over memory** ("when did I last teach the bag?") answered from
   memory metadata only (no images sent).
 - **Development**: spec reviews, test ideas (already used through Claude Code).
-The key stays in an environment variable (`ANTHROPIC_API_KEY`), never in the repo.
+The key stays in an environment variable (`ANTHROPIC_API_KEY`), never in the repo. Later ideas, not
+built: labelling help for aircraft clips (Claude proposes, the observer confirms), never in the live
+decision path.
 
 ## Open questions
 - Will the phone or camera always stand at the **same position**? (affects trajectory calibration)

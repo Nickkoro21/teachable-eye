@@ -50,8 +50,10 @@ The **phone** runs a PWA in Chrome:
    - Memory tab: list, rename, forget a label, forget one view.
    - Photo mode: capture one still and get a result.
    - EN/EL UI.
-5. **TG5 Evaluation tool**
-   - `tools/evaluate.py` on a local folder of `<label>_<n>.jpg`, split into teach and eval.
+5. **TG5 Evaluation tool** *(revised 2026-10-16: collection method A, see R34-R35)*
+   - Test views are collected **in the app** (🧪 Test set switch in TEACH / Label all), kept in `data/eval/`, never taught.
+   - Run from the phone against the live memory; `tools/evaluate.py --encoders` compares encoders on the same data.
+   - ~~`tools/evaluate.py` on a local folder of `<label>_<n>.jpg`, split into teach and eval.~~
    - Outputs: confusion matrix, threshold sweep, and the `uncertain` rate.
    - Compares memory k-NN against a logistic-regression baseline on the same embeddings.
    - Writes a Markdown/JSON report to `data/reports/`.
@@ -60,7 +62,9 @@ The **phone** runs a PWA in Chrome:
    - YuNet + SFace pipeline and an Objects/People mode switch.
    - Consent confirmation on the first teach of a new person.
    - Face data stays only in `data/`.
-7. **TG7 Voice teach (EN/EL)**
+7. **TG8 Optional Claude help** *(added 2026-10-16, R36-R41)* — opt-in on the PC and on the phone; objects only; faces never sent.
+   - Name suggestions (Label all), second opinion (uncertain/unknown), evaluation summary for managers, questions about memory metadata.
+8. **TG7 Voice teach (EN/EL)**
    - Hold-to-talk on the phone and local Whisper.
    - "this is my hat" / «αυτό είναι το καπέλο μου» becomes the label.
    - English is the default, Greek is selectable.
@@ -104,3 +108,11 @@ Recorded here so the spec matches the build (no drift):
 | A gum on grass was not detected | Min area 0.0003; photos detected at 1280 px; on a photo, tap or drag anywhere to mark your own box |
 | "Pause, fix the box, and keep following it" | ⏸ Photo pauses; drag a box's corners to fix it; ▶ Live starts **VitTrack** (OpenCV Zoo, Apache-2.0) from that exact box; a detector box on the same object (IoU ≥ 0.5) is hidden; the track ends after 8 unsure frames |
 | Selfie camera, "is it working?" | ⟲ switches front/back camera (front is mirrored like a selfie camera); 3-2-1 countdown before a photo or a video teach |
+
+## Changes on 2026-10-16
+
+| Request / finding | Change |
+|---|---|
+| Server stopped overnight in People mode (`float32 is not JSON serializable`) | Face boxes and all track boxes are converted to plain floats before they are sent |
+| Evaluation data: collect in the app (method A) or name files (method B)? | **A**: a sticky 🧪 Test set switch; views go to `data/eval/`, never to memory; Memory → Test set tab with Run evaluation |
+| "Where could the Anthropic API help?" — implement the proposals | TG8: four opt-in actions (names, second opinion, summary, questions); faces are filtered out with YuNet before any picture is sent |

@@ -15,7 +15,13 @@ Every item is scored **pass/fail**. The feature is done when all automated check
 | A7 | Server smoke test: an HTTPS app starts; a synthetic JPEG over `/ws` returns valid JSON with normalised boxes in [0, 1] | R9, R10 |
 | A8 | A second `/ws` connection replaces the first and resets the tracker | R11 |
 | A9 | `tools/check_no_media.py --all` passes, and `git ls-files` contains no file under `data/` | N1 |
-| A10 | `evaluate.py` on a synthetic dataset writes both report files to `data/reports/` | R16, R17 |
+| A10 | ~~`evaluate.py` on a synthetic dataset~~ superseded by A11-A13 | R16, R17 |
+| A11 | A view saved with 🧪 Test set lands in `data/eval/`, memory count unchanged; bad ids rejected; outcomes correct/wrong/rejected/false_accept computed right | R34 |
+| A12 | Recommended bands have zero dangerous errors on a synthetic set where the current ones do not; missing strangers are flagged; empty sets do not crash | R35 |
+| A13 | Server flow: teach, save a test view, run evaluation (JSON + Markdown written, no vectors in the JSON), report path sanitised, delete a test view | R34, R35, R17 |
+| A14 | Claude help is refused when `ASSIST` is off and for the people task | R36 |
+| A15 | Name suggestions: a face crop is not sent (and no call at all if nothing is sendable); the request uses structured output and the refusal fallback; usage is logged | R36, R37, R41 |
+| A16 | Second opinion returns only a candidate label (never an invented one), never sends a face; questions and summaries send no pictures and no per-view rows | R38-R40 |
 
 ## Level 2: Measured (recorded in the PR description)
 
@@ -26,6 +32,7 @@ Every item is scored **pass/fail**. The feature is done when all automated check
 | M3 | `evaluate.py --task objects` on the author's phone photos (≥ 4 labels × ≥ 5 views) | Known-label accuracy and `uncertain` rate reported. Held-out labels never `known` at the chosen threshold |
 | M4 | `evaluate.py --task people` (person-a, person-b + strangers) | **No stranger is ever `known` as a taught person** at the chosen threshold |
 | M5 | Memory k-NN vs logistic regression on the same embeddings | Both reported; neither claimed better without the numbers |
+| M6 | `tools/evaluate.py --encoders` on the author's test set | Encoder choice confirmed or changed by the numbers |
 
 ## Level 3: Manual (author on the phone)
 
@@ -41,6 +48,8 @@ Every item is scored **pass/fail**. The feature is done when all automated check
 | H8 | Switch the UI to Greek; teach by voice «αυτό είναι το μικρόφωνο» | The label "μικρόφωνο" is stored and recognized |
 | H9 | Lock the phone for 1 minute, then unlock | Server still running; the live view resumes |
 | H10 | Photo mode on a scene with 2 taught objects | Both listed with decision and top-3 neighbours |
+| H11 | 🧪 Test set on: save views of taught objects and of never-taught ones; Memory → Test set → Run evaluation | Views listed per label, not in memory; result table and full report open |
+| H12 | Claude help on: Suggest names on a photo with a person in it; Ask Claude on an uncertain object; Summary; Ask about memory | Names pre-filled except the person's box (🔒); every answer shown, nothing saved without Save |
 
 ## Sign-off
 - [ ] Level 1 all pass

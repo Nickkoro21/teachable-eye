@@ -74,6 +74,33 @@ def _iou(a, b):
     return inter / union if union > 0 else 0.0
 
 
+_guard = None
+GUARD_SCORE = 0.5   # lower than SCORE: when in doubt, it is a face
+
+
+def has_face(img):
+    """True when `img` (BGR) shows a face. Used before any picture may leave
+    the device (assist.py): a crop with a face is never sent."""
+    global _guard
+    h, w = img.shape[:2]
+    if h < 10 or w < 10:
+        return False
+    scale = min(1.0, DETECT_SIDE / max(h, w))
+    small = img if scale == 1.0 else cv2.resize(
+        img, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_AREA)
+    # small crops: faces may fill them, upscale so YuNet can see them
+    if max(small.shape[:2]) < 320:
+        f = 320 / max(small.shape[:2])
+        small = cv2.resize(small, None, fx=f, fy=f, interpolation=cv2.INTER_LINEAR)
+    with _lock:
+        if _guard is None:
+            _guard = cv2.FaceDetectorYN.create(_model(YUNET), "", (320, 320),
+                                               GUARD_SCORE, 0.3, 5000)
+        _guard.setInputSize((small.shape[1], small.shape[0]))
+        _, found = _guard.detect(small)
+    return found is not None and len(found) > 0
+
+
 class FaceTracker:
     """Detect faces, follow them with greedy IoU matching, keep aligned crops."""
 
@@ -107,7 +134,9 @@ class FaceTracker:
                 continue
             with _lock:
                 aligned = rec.alignCrop(frame, row)
-            box = [max(0.0, x), max(0.0, y), min(w, x + fw), min(h, y + fh)]
+            # plain floats: numpy float32 is not JSON serialisable
+            box = [float(max(0.0, x)), float(max(0.0, y)),
+                   float(min(w, x + fw)), float(min(h, y + fh))]
             out.append((box, aligned, float(row[14]) * (fw * fh) ** 0.5))
         return out
 

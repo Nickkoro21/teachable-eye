@@ -25,6 +25,7 @@ from teachable_eye import config
 
 WEB = Path(__file__).resolve().parent / "web"
 _SAFE_NAME = re.compile(r"^[0-9a-f]{32}\.jpg$")
+_SAFE_REPORT = re.compile(r"^eval-[a-z]+-[0-9]{8}-[0-9]{6}(-[a-z0-9.-]+)?$")
 
 
 def asset_version():
@@ -68,6 +69,7 @@ class TeachBody(BaseModel):
     hold: str | None = None  # from /api/hold (preferred)
     id: int | None = None    # live track id (hold + teach in one step)
     consent: bool = False
+    eval: bool = False       # save to the test set instead of memory (R34)
 
 
 class LabelBody(BaseModel):
@@ -83,6 +85,28 @@ class ExampleBody(BaseModel):
 
 class TaskBody(BaseModel):
     task: str
+
+
+class NamesBody(BaseModel):
+    task: str
+    ids: list[int]           # rows of the last photo
+    lang: str = "en"
+
+
+class OpinionBody(BaseModel):
+    task: str
+    hold: str
+    lang: str = "en"
+
+
+class SummaryBody(BaseModel):
+    report: str
+    lang: str = "en"
+
+
+class AskBody(BaseModel):
+    question: str
+    lang: str = "en"
 
 
 def create_app(tasks, cert_path=None, info=None):
@@ -238,6 +262,10 @@ def create_app(tasks, cert_path=None, info=None):
         if getattr(task, "needs_consent", False) and not body.consent:
             raise HTTPException(428, "consent required for a person")
         try:
+            if body.eval:
+                if not body.hold:
+                    raise HTTPException(400, "missing hold")
+                return {"eval": await run(task.eval_held, body.hold, body.label)}
             if body.hold:
                 pid = await run(task.teach_held, body.hold, body.label)
             elif body.id is not None:
@@ -335,6 +363,127 @@ def create_app(tasks, cert_path=None, info=None):
             raise HTTPException(404, "no such thumbnail")
         return FileResponse(path, media_type="image/jpeg",
                             headers={"Cache-Control": "max-age=86400"})
+
+    # -- test set and evaluation (R34, R35) -------------------------------------
+
+    @app.get("/api/eval")
+    async def eval_set(task: str = "objects"):
+        store = task_of(task).evalset
+        return {"task": task, "labels": store.labels(), "items": store.items()}
+
+    @app.get("/api/eval/{task}/{iid}.jpg")
+    async def eval_image(task: str, iid: str):
+        try:
+            path = task_of(task).evalset.path(iid)
+        except LookupError as exc:
+            raise HTTPException(400, str(exc)) from None
+        if not path.exists():
+            raise HTTPException(404, "no such test view")
+        return FileResponse(path, media_type="image/jpeg")
+
+    @app.post("/api/eval/forget")
+    async def eval_forget(body: ExampleBody):
+        try:
+            return {"deleted": task_of(body.task).evalset.delete(body.id)}
+        except LookupError as exc:
+            raise HTTPException(400, str(exc)) from None
+
+    @app.post("/api/eval/run")
+    async def eval_run(body: TaskBody):
+        report, stem = await run(task_of(body.task).run_eval)
+        keep = ("task", "encoder", "created", "memory", "test", "current",
+                "recommended", "top1", "separation", "augmentation", "views_curve",
+                "classifier", "notes")
+        return {"report": stem, **{k: report.get(k) for k in keep}}
+
+    @app.get("/api/reports/{stem}.md")
+    async def report_md(stem: str):
+        if not _SAFE_REPORT.match(stem):
+            raise HTTPException(400, "bad report name")
+        path = config.DATA_DIR / "reports" / f"{stem}.md"
+        if not path.exists():
+            raise HTTPException(404, "no such report")
+        return Response(path.read_text(encoding="utf-8"),
+                        media_type="text/markdown; charset=utf-8")
+
+    # -- optional help from Claude (R36-R40) -------------------------------------
+
+    def assist_error(exc):
+        return HTTPException(503, str(exc))
+
+    @app.get("/api/assist")
+    async def assist_status():
+        from teachable_eye import assist
+        return assist.status()
+
+    @app.post("/api/assist/names")
+    async def assist_names(body: NamesBody):
+        from teachable_eye import assist
+        task = task_of(body.task)
+        crops = await run(task.still_crops, body.ids)
+        known = [g["label"] for g in task.memory.labels()]
+        try:
+            out = await asyncio.to_thread(
+                assist.suggest_names, [c if c is not None else np.zeros((0, 0, 3), np.uint8)
+                                       for c in crops], known, body.lang, body.task)
+        except assist.AssistError as exc:
+            raise assist_error(exc) from None
+        return {"items": [dict(o, id=i) for i, o in zip(body.ids, out)]}
+
+    @app.post("/api/assist/opinion")
+    async def assist_opinion(body: OpinionBody):
+        from teachable_eye import assist
+        task = task_of(body.task)
+        try:
+            crop = task.held_crops(body.hold)[0]
+        except LookupError as exc:
+            raise HTTPException(409, str(exc)) from None
+
+        def candidates():
+            decision = task.memory.recognize(task.embed([crop])[0], k=3)
+            labels = list(dict.fromkeys(n.label for n in decision.neighbours))
+            return decision, [(lb, task.example_images(lb)) for lb in labels]
+        decision, cands = await run(candidates)
+        try:
+            out = await asyncio.to_thread(assist.second_opinion, crop, cands,
+                                          body.lang, body.task)
+        except assist.AssistError as exc:
+            raise assist_error(exc) from None
+        return {**out, "memory": decision.to_json()}
+
+    @app.post("/api/assist/summary")
+    async def assist_summary(body: SummaryBody):
+        import json
+        from teachable_eye import assist
+        if not _SAFE_REPORT.match(body.report):
+            raise HTTPException(400, "bad report name")
+        path = config.DATA_DIR / "reports" / f"{body.report}.json"
+        if not path.exists():
+            raise HTTPException(404, "no such report")
+        report = json.loads(path.read_text(encoding="utf-8"))
+        try:
+            text = await asyncio.to_thread(assist.write_summary, report, body.lang)
+        except assist.AssistError as exc:
+            raise assist_error(exc) from None
+        lang = "el" if body.lang == "el" else "en"
+        path.with_name(f"{body.report}.summary-{lang}.md").write_text(text, encoding="utf-8")
+        return {"text": text}
+
+    @app.post("/api/assist/ask")
+    async def assist_ask(body: AskBody):
+        from teachable_eye import assist
+        task = task_of("objects")
+        labels = task.memory.labels()
+        try:
+            evalset = task.evalset.labels()
+        except AttributeError:
+            evalset = {}
+        try:
+            text = await asyncio.to_thread(assist.ask_memory, body.question, labels,
+                                           evalset, body.lang)
+        except assist.AssistError as exc:
+            raise assist_error(exc) from None
+        return {"text": text}
 
     @app.exception_handler(HTTPException)
     async def http_error(_, exc):

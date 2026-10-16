@@ -191,3 +191,37 @@ body.mirror #video, body.mirror #frozen { transform: scaleX(-1); }
 .variant button { position: absolute; top: -6px; right: -6px; width: 20px; height: 20px;
   border-radius: 50%; background: #ef4444cc; font-size: 11px; line-height: 20px; padding: 0; }
 .augnote { font-size: 12px; opacity: .8; }
+
+/* test set (R34) and evaluation (R35) */
+.evalrow { font-size: 14px; }
+.evalbadge { flex: 0 0 auto; background: #a855f733; color: #e9d5ff; padding: 6px 10px; }
+.memtabs { margin-bottom: 12px; }
+.runeval { width: 100%; padding: 12px; border-radius: 12px; background: var(--known);
+  color: #04201c; font-weight: 700; margin: 4px 0 12px; }
+.runeval:disabled { opacity: .5; }
+.evalres { background: var(--panel); border-radius: var(--radius); padding: 10px; margin-bottom: 12px; }
+.evalres table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+.evalres th, .evalres td { text-align: left; padding: 5px 4px; border-bottom: 1px solid #ffffff14; }
+.evalres th { color: var(--muted); font-weight: 600; }
+.evalres .bad { color: #fca5a5; font-weight: 700; }
+.evalres .ok { color: var(--known); font-weight: 700; }
+.evalres ul { margin: 6px 0; padding-left: 18px; color: var(--muted); font-size: 13px; }
+.evalres a { color: var(--known); }
+.tag-stranger { color: var(--uncertain); font-size: 12px; }
+.tag-taught { color: var(--known); font-size: 12px; }
+
+/* optional Claude help (R36-R40) */
+.assistrow { font-size: 13.5px; background: #ffffff0d; border-radius: 12px; padding: 10px; }
+.suggest { background: #a855f722; color: #e9d5ff; border-color: #a855f788; }
+.mrow input.ai { border-color: #a855f7aa; background: #a855f714; }
+.ask { display: flex; gap: 8px; margin-bottom: 10px; }
+.ask input { flex: 1; min-width: 0; font: inherit; font-size: 16px; padding: 9px 10px; border-radius: 10px;
+  border: 1px solid #a855f788; background: #0b1220; color: var(--ink); }
+.answer { background: #a855f714; border: 1px solid #a855f744; border-radius: 12px; padding: 10px;
+  margin-bottom: 12px; white-space: pre-wrap; font-size: 14px; }
+.askclaude { margin-top: 8px; padding: 7px 12px; border-radius: 999px; background: #a855f733;
+  color: #e9d5ff; font-size: 13.5px; }
+.opinion { margin-top: 8px; padding: 8px 10px; border-radius: 10px; background: #a855f71a;
+  font-size: 13.5px; }
+.opinion button { margin-top: 6px; padding: 6px 12px; border-radius: 999px; background: var(--known);
+  color: #04201c; font-weight: 700; }

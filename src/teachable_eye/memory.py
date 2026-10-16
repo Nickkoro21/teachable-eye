@@ -197,6 +197,22 @@ class TaskMemory:
         return [{"label": label, "count": len(rows), "examples": rows}
                 for label, rows in groups.items()]
 
+    def points(self):
+        """Every point with its vector, for evaluation:
+        [{"id", "label", "parent", "aug", "vector"}]."""
+        with self._lock:
+            records, _ = self.shard.scroll(ScrollRequest(
+                limit=SCAN_LIMIT, with_payload=True, with_vector=True))
+        out = []
+        for r in records:
+            vec = r.vector.get(VECTOR) if isinstance(r.vector, dict) else r.vector
+            if vec is None:
+                continue
+            out.append({"id": str(r.id), "label": r.payload.get("label", ""),
+                        "parent": r.payload.get("parent"), "aug": r.payload.get("aug"),
+                        "vector": list(vec)})
+        return out
+
     def thumbs_in_use(self):
         """Every thumbnail file name still referenced by a point."""
         with self._lock:

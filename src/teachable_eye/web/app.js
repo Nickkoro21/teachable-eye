@@ -41,6 +41,24 @@ const I18N = {
     orNew: "…or type a new name", newLabel: "new", peopleOff: "People mode is not loaded on the PC.",
     recording: "Recording views…", recMove: "Move slowly around it.", stop: "Stop",
     recViews: "{0} views", noViews: "No views captured — keep it in view and try again.",
+    assistTitle: "✨ Claude help (cloud, optional)",
+    assistNote: "Name suggestions, a second opinion, report summaries. Objects only; pictures with a face never leave the PC.",
+    testBadge: "🧪 test", evalMode: "🧪 Test set: save for evaluation, do not teach",
+    saveTest: "Save to test set", savedTest: "Saved {1} test views of “{0}” (not taught).",
+    savedTestMany: "Saved {0} labels to the test set (not taught).",
+    suggestNames: "✨ Suggest names (Claude)", suggesting: "Asking Claude…",
+    suggested: "Claude suggested {0} names — check them before saving.", faceKept: "face: not sent",
+    askClaude: "✨ Ask Claude", asking: "Asking Claude…", claudeSays: "Claude",
+    noMatch: "none of the taught ones", teachAs: "Teach as “{0}”",
+    conf_high: "sure", conf_medium: "fairly sure", conf_low: "unsure",
+    testSet: "Test set", runEval: "Run evaluation", running: "Evaluating…",
+    testIntro: "Test views are never taught. Save views of taught things in other light, angles and places — and things never taught (they should come out unknown). Then run the evaluation.",
+    testEmpty: "No test views yet. In TEACH or Label all, tick 🧪 Test set.",
+    stranger: "never taught", taughtTag: "taught", bandsCur: "now", bandsRec: "recommended",
+    colCorrect: "correct", colDanger: "dangerous", colUnsure: "unsure", colStrangers: "strangers → unknown",
+    dangerNote: "Dangerous = a confident wrong name. It must stay 0.",
+    fullReport: "Full report", summary: "✨ Summary for managers (Claude)",
+    askPh: "Ask about your memory… (Claude)", evalViews: "{0} test views",
   },
   el: {
     tagline: "Δείξ' του λίγα παραδείγματα. Θυμάται — στη δική σου συσκευή.",
@@ -78,6 +96,24 @@ const I18N = {
     orNew: "…ή γράψε νέο όνομα", newLabel: "νέο", peopleOff: "Τα πρόσωπα δεν έχουν φορτωθεί στο PC.",
     recording: "Καταγραφή όψεων…", recMove: "Κινήσου αργά γύρω του.", stop: "Τέλος",
     recViews: "{0} όψεις", noViews: "Δεν καταγράφηκαν όψεις — κράτα το στο κάδρο και ξαναδοκίμασε.",
+    assistTitle: "✨ Βοήθεια από το Claude (cloud, προαιρετική)",
+    assistNote: "Προτάσεις ονομάτων, δεύτερη γνώμη, σύνοψη αναφορών. Μόνο αντικείμενα· εικόνες με πρόσωπο δεν φεύγουν ποτέ από το PC.",
+    testBadge: "🧪 δοκιμή", evalMode: "🧪 Σύνολο δοκιμής: αποθήκευση για αξιολόγηση, όχι μάθηση",
+    saveTest: "Αποθήκευση για δοκιμή", savedTest: "Αποθηκεύτηκαν {1} όψεις δοκιμής του «{0}» (δεν το έμαθε).",
+    savedTestMany: "Αποθηκεύτηκαν {0} ετικέτες για δοκιμή (δεν τις έμαθε).",
+    suggestNames: "✨ Πρότεινε ονόματα (Claude)", suggesting: "Ρωτάω το Claude…",
+    suggested: "Το Claude πρότεινε {0} ονόματα — έλεγξέ τα πριν την αποθήκευση.", faceKept: "πρόσωπο: δεν στάλθηκε",
+    askClaude: "✨ Ρώτα το Claude", asking: "Ρωτάω το Claude…", claudeSays: "Claude",
+    noMatch: "κανένα από τα γνωστά", teachAs: "Μάθε το ως «{0}»",
+    conf_high: "σίγουρο", conf_medium: "μάλλον", conf_low: "αβέβαιο",
+    testSet: "Δοκιμή", runEval: "Αξιολόγηση", running: "Αξιολογώ…",
+    testIntro: "Οι όψεις δοκιμής δεν διδάσκονται ποτέ. Αποθήκευσε όψεις από γνωστά αντικείμενα σε άλλο φως, γωνία και μέρος — και αντικείμενα που δεν έμαθε ποτέ (πρέπει να βγουν «άγνωστο»). Μετά πάτα Αξιολόγηση.",
+    testEmpty: "Δεν υπάρχουν όψεις δοκιμής. Στο ΜΑΘΕ ή στο «Όλα», τσέκαρε 🧪 Σύνολο δοκιμής.",
+    stranger: "δεν το έμαθε", taughtTag: "γνωστό", bandsCur: "τώρα", bandsRec: "προτεινόμενο",
+    colCorrect: "σωστά", colDanger: "επικίνδυνα", colUnsure: "αβέβαια", colStrangers: "άγνωστα → «άγνωστο»",
+    dangerNote: "Επικίνδυνο = σίγουρο λάθος όνομα. Πρέπει να μένει 0.",
+    fullReport: "Πλήρης αναφορά", summary: "✨ Σύνοψη για προϊσταμένους (Claude)",
+    askPh: "Ρώτα για τη μνήμη σου… (Claude)", evalViews: "{0} όψεις δοκιμής",
   },
 };
 
@@ -112,7 +148,16 @@ const state = {
   still: null,           // {rows, w, h} when photo mode is showing
   naming: false, holdId: null,
   burst: null,           // {id, tid, target, timer} while teaching from video
+  evalMode: store.get("evalMode", "0") === "1",   // save to the test set, not memory
+  assist: { ready: false, enabled: false },       // Claude help on the PC
+  assistOn: store.get("assist", "0") === "1",     // ...and opted in on this phone
+  opinion: null,         // Claude's second opinion for the chosen box
+  memTab: "memory", lastEval: null,
 };
+
+// Claude help is offered only when the PC has it, this phone opted in, and
+// the task is objects (faces are never sent).
+function assistOk() { return state.assist.ready && state.assistOn && state.task === "objects"; }
 
 // -- i18n ---------------------------------------------------------------------
 function t(key, ...args) {
@@ -163,6 +208,10 @@ async function checkServer() {
   } catch {
     $("landStatus").textContent = t("serverDown");
   }
+  try { state.assist = await (await fetch("/api/assist")).json(); } catch { /* optional */ }
+  $("assistRow").hidden = !state.assist.enabled;
+  $("assistToggle").checked = state.assistOn;
+  $("assistToggle").disabled = !state.assist.ready;
   document.querySelectorAll("[data-start],#taskSeg button").forEach((b) => {
     const task = b.dataset.start || b.dataset.task;
     b.disabled = !state.tasks.includes(task);
@@ -350,6 +399,7 @@ function toFrame(px, py) {
 }
 
 function caption(r) {
+  if (r.tested) return `🧪 ${r.label}`;
   if (r.taught) return `✓ ${r.label}`;
   if (r.decision === "known") return `${r.label} · ${r.score.toFixed(2)}`;
   if (r.decision === "uncertain") return `${t("maybe")} ${r.guess}? · ${r.score.toFixed(2)}`;
@@ -495,9 +545,52 @@ function renderCard() {
       ${escapeHtml(n.label)}<br>${n.score.toFixed(2)}${n.aug ? ` ${AUG_ICON[n.aug] || ""}` : ""}</div>`).join("");
   card.innerHTML = `<div class="head"><span class="dec" style="color:${COLORS[r.decision]}">
       ${escapeHtml(name)}</span><small>${t(r.decision)} · ${r.score.toFixed(2)}</small></div>
-    ${nbrs ? `<small>${t("nearest")}</small><div class="nbrs">${nbrs}</div>` : ""}`;
+    ${nbrs ? `<small>${t("nearest")}</small><div class="nbrs">${nbrs}</div>` : ""}
+    ${opinionHtml(r)}`;
   card.hidden = false;
 }
+
+// -- Claude's second opinion (R38): advice next to the memory's answer ----------
+function opinionHtml(r) {
+  const op = state.opinion && state.opinion.rid === r.id ? state.opinion : null;
+  if (op && op.pending) return `<div class="opinion">${t("asking")}</div>`;
+  if (op) {
+    const what = op.match ? `«${escapeHtml(op.match)}»` : t("noMatch");
+    return `<div class="opinion"><b>${t("claudeSays")}:</b> ${what} · ${t(`conf_${op.confidence}`)}
+      <br><small>${escapeHtml(op.reason)}</small>
+      ${op.match ? `<br><button type="button" data-teach-as="1">${escapeHtml(t("teachAs", op.match))}</button>` : ""}</div>`;
+  }
+  if (assistOk() && (r.decision === "uncertain" || r.decision === "unknown") && !state.burst) {
+    return `<button type="button" class="askclaude" data-ask="1">${t("askClaude")}</button>`;
+  }
+  return "";
+}
+
+async function askOpinion() {
+  const r = currentTarget();
+  if (!r) return;
+  const preview = cropPreview(r.box);
+  state.opinion = { rid: r.id, pending: true };
+  renderCard();
+  try {
+    const { hold } = await api("/api/hold", { task: state.task, id: r.id, still: !!state.still });
+    const res = await api("/api/assist/opinion", { task: state.task, hold, lang: state.lang });
+    state.opinion = { rid: r.id, hold, preview, ...res };
+  } catch (err) {
+    state.opinion = null;
+    toast(err.message, 5000);
+  }
+  renderCard();
+}
+
+$("card").addEventListener("click", (ev) => {
+  if (ev.target.closest("[data-ask]")) askOpinion();
+  const op = state.opinion;
+  if (ev.target.closest("[data-teach-as]") && op && op.match) {
+    state.opinion = null;
+    openNameSheet(op.hold, op.preview ? [op.preview] : [], { label: op.match });
+  }
+});
 
 // Keep the evidence card just above the hint, however many lines the hint has.
 function placeCard() {
@@ -583,8 +676,22 @@ function openNameSheet(holdId, thumbs, r) {
   $("labelInput").placeholder = state.task === "people" ? t("labelPerson") : t("labelObject");
   $("consentRow").hidden = state.task !== "people";
   $("consent").checked = false;
+  setEvalMode(state.evalMode);
   $("sheet").hidden = false;
   loadChoices(r);
+}
+
+// 🧪 Test set (R34): views go to data/eval, never to memory. The choice is
+// remembered (a collection session is long) and shown as a badge on top.
+function setEvalMode(on) {
+  state.evalMode = !!on;
+  store.set("evalMode", on ? "1" : "0");
+  $("evalMode").checked = state.evalMode;
+  $("multiEval").checked = state.evalMode;
+  $("evalBadge").hidden = !state.evalMode;
+  document.querySelector(".augnote").hidden = state.evalMode;
+  if (state.naming) markChoice();
+  if (state.multi) updateMultiSave();
 }
 
 function closeTeach() {
@@ -656,7 +763,8 @@ function markChoice() {
     // same word typed with other accents: use the existing label as stored
     if (on && c.dataset.label !== raw) $("labelInput").value = c.dataset.label;
   });
-  $("saveBtn").textContent = typed && !exact ? `${t("save")} · ${t("newLabel")}` : t("save");
+  $("saveBtn").textContent = state.evalMode ? t("saveTest")
+    : typed && !exact ? `${t("save")} · ${t("newLabel")}` : t("save");
 }
 
 async function submitTeach(ev) {
@@ -668,8 +776,9 @@ async function submitTeach(ev) {
   save.disabled = true;
   const views = $("teachThumbs").children.length || 1;
   try {
-    await api("/api/teach", { task: state.task, hold: state.holdId, label, consent: $("consent").checked });
-    toast(t("taught", label, views));
+    const res = await api("/api/teach", { task: state.task, hold: state.holdId, label,
+                                          consent: $("consent").checked, eval: state.evalMode });
+    toast(state.evalMode ? t("savedTest", label, res.eval) : t("taught", label, views));
     closeTeach();
   } catch (err) {
     toast(err.message, 4000);
@@ -698,6 +807,10 @@ async function openMulti() {
   rows.forEach((r, i) => list.appendChild(multiRow(r, i)));
   $("multiConsentRow").hidden = state.task !== "people";
   $("multiConsent").checked = false;
+  $("multiSuggest").hidden = !assistOk();
+  $("multiSuggest").disabled = false;
+  $("multiSuggest").textContent = t("suggestNames");
+  $("multiEval").checked = state.evalMode;
   $("multi").hidden = false;
   updateMultiSave();
 }
@@ -759,9 +872,33 @@ function multiItems() {
   }).filter((it) => it.label);
 }
 
+// ✨ Claude suggests names for the rows still empty (R37). They are only
+// pre-filled: the user reviews them and nothing is saved until Save.
+async function suggestNames() {
+  const rows = [...$("multiList").querySelectorAll(".mrow")]
+    .filter((row) => !row.querySelector("input").value.trim());
+  if (!rows.length) return;
+  const btn = $("multiSuggest");
+  btn.disabled = true; btn.textContent = t("suggesting");
+  try {
+    const res = await api("/api/assist/names", { task: state.task, lang: state.lang,
+      ids: rows.map((row) => Number(row.dataset.id)) });
+    let n = 0;
+    for (const it of res.items) {
+      const input = $("multiList").querySelector(`.mrow[data-id="${it.id}"] input`);
+      if (!input || input.value.trim()) continue;
+      if (it.skipped) { input.placeholder = `🔒 ${t("faceKept")}`; continue; }
+      if (it.name) { input.value = it.name; input.classList.add("ai"); n++; }
+    }
+    toast(t("suggested", n), 4000);
+  } catch (err) { toast(err.message, 5000); }
+  btn.disabled = false; btn.textContent = t("suggestNames");
+  updateMultiSave();
+}
+
 function updateMultiSave() {
   const n = multiItems().length;
-  $("multiSave").textContent = t("saveAll", n);
+  $("multiSave").textContent = state.evalMode ? `${t("saveTest")} · ${n}` : t("saveAll", n);
   $("multiSave").disabled = n === 0;
 }
 
@@ -781,14 +918,15 @@ async function saveMulti(ev) {
     try {
       const { hold } = await api("/api/hold", { task: state.task, id: it.id, still: true });
       await api("/api/teach", { task: state.task, hold, label: it.label,
-                                consent: $("multiConsent").checked });
+                                consent: $("multiConsent").checked, eval: state.evalMode });
       const r = state.still && state.still.rows.find((q) => q.id === it.id);
-      if (r) Object.assign(r, { taught: true, label: it.label.toLowerCase() });
+      if (r) Object.assign(r, state.evalMode ? { tested: true, label: it.label.toLowerCase() }
+                                             : { taught: true, label: it.label.toLowerCase() });
       done++;
     } catch (err) { toast(`${it.label}: ${err.message}`, 4000); }
   }
   closeMulti();
-  toast(t("taughtMany", done));
+  toast(state.evalMode ? t("savedTestMany", done) : t("taughtMany", done));
   renderCard();
 }
 
@@ -854,8 +992,102 @@ function switchTask(task) {
 async function openMemory() {
   $("memory").hidden = false;
   $("memTitle").textContent = `${t("memory")} · ${t(state.task)}`;
-  $("wipeBtn").hidden = state.task !== "people";
-  await renderMemory();
+  $("askForm").hidden = !assistOk();
+  $("askInput").placeholder = t("askPh");
+  await showMemTab(state.memTab);
+}
+
+async function showMemTab(tab) {
+  state.memTab = tab;
+  document.querySelectorAll("#memTabs button").forEach((b) => b.classList.toggle("on", b.dataset.tab === tab));
+  $("memPane").hidden = tab !== "memory";
+  $("testPane").hidden = tab !== "test";
+  $("wipeBtn").hidden = tab !== "memory" || state.task !== "people";
+  if (tab === "test") await renderTest(); else await renderMemory();
+}
+
+// ✨ Questions about memory (R40): answered from labels, counts and dates only.
+async function askMemory(ev) {
+  ev.preventDefault();
+  const q = $("askInput").value.trim();
+  if (!q) return;
+  const out = $("askOut");
+  out.hidden = false; out.textContent = t("asking");
+  try {
+    const res = await api("/api/assist/ask", { question: q, lang: state.lang });
+    out.textContent = res.text;
+  } catch (err) { out.textContent = err.message; }
+}
+
+// -- test set and evaluation (R34, R35) --------------------------------------------
+async function renderTest() {
+  const list = $("testList");
+  const [ev, mem] = await Promise.all([
+    fetch(`/api/eval?task=${state.task}`).then((r) => r.json()),
+    fetch(`/api/memory?task=${state.task}`).then((r) => r.json())]);
+  const taught = new Set((mem.labels || []).map((g) => g.label));
+  if (state.lastEval && state.lastEval.task === state.task) renderEval(state.lastEval);
+  else $("evalResult").innerHTML = "";
+  $("runEval").disabled = !(ev.items || []).length;
+  if (!(ev.items || []).length) { list.innerHTML = `<p class="empty">${t("testEmpty")}</p>`; return; }
+  const groups = {};
+  for (const it of ev.items) (groups[it.label] = groups[it.label] || []).push(it);
+  list.innerHTML = "";
+  for (const [label, items] of Object.entries(groups)) {
+    const item = document.createElement("div");
+    item.className = "mem-item";
+    const known = taught.has(label);
+    item.innerHTML = `<div class="mem-row"><div class="name"><b>${escapeHtml(label)}</b>
+        <small>${t("evalViews", items.length)} · <span class="${known ? "tag-taught" : "tag-stranger"}">
+        ${known ? t("taughtTag") : t("stranger")}</span></small></div></div>
+      <div class="views testviews">${items.map((it) => `<div class="view">
+        <img src="/api/eval/${state.task}/${it.id}.jpg" alt="" loading="lazy">
+        <button data-del="${it.id}" aria-label="delete test view">✕</button></div>`).join("")}</div>`;
+    item.querySelectorAll("[data-del]").forEach((b) => {
+      b.onclick = async () => {
+        await api("/api/eval/forget", { task: state.task, id: b.dataset.del });
+        renderTest();
+      };
+    });
+    list.appendChild(item);
+  }
+}
+
+async function runEval() {
+  const btn = $("runEval");
+  btn.disabled = true; btn.textContent = t("running");
+  try {
+    state.lastEval = await api("/api/eval/run", { task: state.task });
+    renderEval(state.lastEval);
+  } catch (err) { toast(err.message, 5000); }
+  btn.disabled = false; btn.textContent = t("runEval");
+}
+
+function renderEval(r) {
+  const pct = (x) => (x == null ? "—" : `${Math.round(100 * x)}%`);
+  const line = (name, c) => `<tr><td>${name}<br><small>${c.threshold.toFixed(2)} / ${c.margin.toFixed(2)}</small></td>
+    <td>${c.correct}/${c.enrolled} <small>${pct(c.correct_rate)}</small></td>
+    <td class="${c.dangerous ? "bad" : "ok"}">${c.dangerous}</td>
+    <td>${c.uncertain}</td>
+    <td>${c.rejected}/${c.strangers} <small>${pct(c.reject_rate)}</small></td></tr>`;
+  const notes = (r.notes || []).map((n) => `<li>${escapeHtml(n)}</li>`).join("");
+  $("evalResult").innerHTML = `<div class="evalres">
+    <table><tr><th></th><th>${t("colCorrect")}</th><th>${t("colDanger")}</th><th>${t("colUnsure")}</th>
+      <th>${t("colStrangers")}</th></tr>
+      ${line(t("bandsCur"), r.current)}${line(t("bandsRec"), r.recommended)}</table>
+    <ul><li>${t("dangerNote")}</li>${notes}</ul>
+    <a href="/api/reports/${r.report}.md" target="_blank" rel="noopener">${t("fullReport")}</a>
+    ${assistOk() ? `<button type="button" class="askclaude" id="sumBtn">${t("summary")}</button>` : ""}
+    <div id="sumOut" class="answer" hidden></div></div>`;
+  const sum = $("sumBtn");
+  if (sum) sum.onclick = async () => {
+    const out = $("sumOut");
+    out.hidden = false; out.textContent = t("asking"); sum.disabled = true;
+    try {
+      out.textContent = (await api("/api/assist/summary", { report: r.report, lang: state.lang })).text;
+    } catch (err) { out.textContent = err.message; }
+    sum.disabled = false;
+  };
 }
 
 async function renderMemory() {
@@ -993,6 +1225,13 @@ $("flipBtn").onclick = flipCamera;
 $("labelAllBtn").onclick = openMulti;
 $("multiCancel").onclick = closeMulti;
 $("multiAdd").onclick = () => toast(t("drawNow"), 3500);
+$("multiSuggest").onclick = suggestNames;
+$("evalMode").onchange = (ev) => setEvalMode(ev.target.checked);
+$("multiEval").onchange = (ev) => setEvalMode(ev.target.checked);
+$("assistToggle").onchange = (ev) => { state.assistOn = ev.target.checked; store.set("assist", state.assistOn ? "1" : "0"); };
+document.querySelectorAll("#memTabs button").forEach((b) => { b.onclick = () => showMemTab(b.dataset.tab); });
+$("askForm").onsubmit = askMemory;
+$("runEval").onclick = runEval;
 $("multiForm").onsubmit = saveMulti;
 $("teachBtn").onclick = teachSelected;
 $("videoBtn").onclick = startBurst;
@@ -1015,6 +1254,7 @@ document.addEventListener("visibilitychange", () => {
 
 (function init() {
   applyLang();
+  $("evalBadge").hidden = !state.evalMode;
   if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
   checkServer();
   requestAnimationFrame(pump);
