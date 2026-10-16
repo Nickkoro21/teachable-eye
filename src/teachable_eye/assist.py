@@ -146,6 +146,35 @@ NAMES_SCHEMA = {
 }
 
 
+# System prompts follow Anthropic's prompting guidance for Claude Opus 5.5 /
+# Sonnet 5.5: say who it is for and *why* (the person confirms everything, a
+# confident wrong answer costs more than "unsure"), describe the data in XML
+# tags, ask for what to do rather than lists of don'ts, and let effort (not
+# "think less" wording) control depth. Output shape comes from a JSON schema.
+NAMES_SYSTEM = """\
+You suggest names for objects in a person's private visual memory app. The app \
+runs on their own PC; they photograph things at home, at work and outdoors, and \
+teach the app a name for each one so it can recognise them later. You see crops \
+of the boxes found in one photo, in <crop> tags. Your names only pre-fill a form: \
+the person reviews every one before saving, so a clear "not sure" helps them more \
+than a confident guess that is wrong.
+
+For each crop, give the everyday name a person would say for that thing: 1-3 \
+words, lower case, without an article (for example "coffee mug", "car keys", \
+"κούπα", "κλειδιά"). Name the kind of thing you can see; owners, brands or \
+contents belong in the name only when they are clearly visible.
+
+<existing_labels> lists what this person has already taught. When a crop shows \
+the same kind of thing, reuse their wording, so the memory stays consistent (if \
+they say "κούπα", do not answer "φλιτζάνι"). It may still be a different item \
+of that kind, so drop personal parts of a label such as an owner's name.
+
+Set confident to false when the crop is blurred, cut off or ambiguous. When a \
+crop shows only background (a wall, a floor, a table top), give that surface's \
+name with confident false. Return exactly one item per crop, with index equal \
+to the crop's index."""
+
+
 def suggest_names(crops, known_labels=(), lang="en", task="objects"):
     """One suggestion per crop: {"name", "confident", "skipped"}.
 
@@ -158,23 +187,16 @@ def suggest_names(crops, known_labels=(), lang="en", task="objects"):
     if not send:
         return out
     language = LANGS.get(lang, "English")
+    # pictures first, then the instructions (Anthropic's guidance for vision)
     content = []
     for n, i in enumerate(send, 1):
-        content += [{"type": "text", "text": f"Crop {n}:"}, _image(crops[i])]
-    known = ", ".join(sorted(set(known_labels))[:200]) or "(none yet)"
+        content += [{"type": "text", "text": f"<crop index=\"{n}\">"}, _image(crops[i]),
+                    {"type": "text", "text": "</crop>"}]
+    known = "\n".join(sorted(set(known_labels))[:200]) or "(none yet)"
     content.append({"type": "text", "text":
-                    f"The person's existing labels: {known}\n"
-                    f"Name each of the {len(send)} crops in {language}."})
-    system = (
-        "You help a person label objects for a personal visual memory that runs on "
-        "their own device. You get numbered crops of objects from one photo. For each "
-        "crop give a short everyday name: 1-3 words, lower case, no article. When a "
-        "crop shows the same kind of thing as one of the person's existing labels, "
-        "reuse their word for that kind of thing, but never assume it is the same "
-        "personal item and leave out owners' names or details you cannot see. If a "
-        "crop shows no clear object (a wall, a table top, a blur), give the surface or "
-        "an empty name and set confident to false. Set confident to false whenever "
-        "you are unsure. Return one item per crop, with index = the crop number.")
+                    f"<existing_labels>\n{known}\n</existing_labels>\n\n"
+                    f"Suggest a name in {language} for each of the {len(send)} crops."})
+    system = NAMES_SYSTEM
     data = _call("names", system, content, NAMES_SCHEMA, effort="low")
     for item in data.get("items", []):
         n = item.get("index")
@@ -197,6 +219,22 @@ OPINION_SCHEMA = {
 }
 
 
+OPINION_SYSTEM = """\
+You give a second opinion to a private object-recognition app. The app's own \
+memory compared the picture in <query> with the items the person has taught, and \
+was not sure. Each <candidate> shows one or two taught pictures of one of the \
+nearest items, under its label.
+
+These are personal items, so the question is whether the query shows the same \
+physical item, not just the same kind of thing: compare colour, markings, text, \
+shape and wear, and allow for different light, angle and distance. Set match to \
+the candidate's label exactly when you think it is that item; set it to an empty \
+string when it is none of them or the pictures do not let you tell. Your answer \
+is shown next to the app's own, and the person decides, so state your confidence \
+honestly: "low" whenever the pictures are too small, blurred or alike to be sure. \
+Give the reason in one or two short sentences, naming what you compared."""
+
+
 def second_opinion(query, candidates, lang="en", task="objects"):
     """Is `query` the same physical object as one of the candidates?
 
@@ -206,29 +244,24 @@ def second_opinion(query, candidates, lang="en", task="objects"):
     _check(task)
     if not _sendable(query):
         raise AssistError("this picture shows a face, so it stays on the device")
-    content = [{"type": "text", "text": "The object to identify:"}, _image(query)]
+    content = [{"type": "text", "text": "<query>"}, _image(query),
+               {"type": "text", "text": "</query>"}]
     labels = []
     for label, examples in candidates:
         pics = [e for e in examples if _sendable(e)][:2]
         if not pics:
             continue
         labels.append(label)
-        content.append({"type": "text", "text": f"Taught examples of \"{label}\":"})
+        content.append({"type": "text", "text": f"<candidate label={json.dumps(label, ensure_ascii=False)}>"})
         content += [_image(p) for p in pics]
+        content.append({"type": "text", "text": "</candidate>"})
     if not labels:
         raise AssistError("no taught examples to compare with")
     language = LANGS.get(lang, "English")
     content.append({"type": "text", "text":
-                    "Is the object to identify the same physical item as one of the "
-                    f"labels {', '.join(repr(x) for x in labels)}? "
-                    f"Answer the reason in {language}, one or two short sentences."})
-    system = (
-        "You give a second opinion to a personal object-recognition app. Personal "
-        "items matter: the same kind of object is not enough, it must look like the "
-        "same physical item (colour, markings, shape, wear). Set match to the exact "
-        "label if it is that item, or to an empty string if it is none of them or "
-        "you cannot tell. Be conservative: when unsure, say so with low confidence.")
-    data = _call("opinion", system, content, OPINION_SCHEMA, effort="low")
+                    "Is the object in <query> the same physical item as one of the "
+                    f"candidates? Write the reason in {language}."})
+    data = _call("opinion", OPINION_SYSTEM, content, OPINION_SCHEMA, effort="low")
     match = data.get("match", "")
     return {"match": match if match in labels else "",
             "confidence": data.get("confidence", "low"),
@@ -242,18 +275,31 @@ def write_summary(report, lang="en"):
     _check(report.get("task", "objects"))
     slim = {k: v for k, v in report.items() if k not in ("items", "sweep")}
     language = LANGS.get(lang, "English")
-    system = (
-        "You write short, plain summaries of evaluation results for managers who are "
-        "not computer-vision specialists. Use only the numbers given; never invent or "
-        "round them misleadingly. Explain: how often it named things correctly, the "
-        "number of dangerous errors (a confident wrong name — the one that must stay "
-        "at zero), how often it rightly said 'unknown' for never-taught things, what "
-        "the recommended threshold changes, and what to do next. Say plainly when the "
-        "test set is too small to be sure. Markdown, at most about 250 words.")
-    text = _call("summary", system, [{"type": "text", "text":
-                 f"Write the summary in {language}.\n\n" + json.dumps(slim, ensure_ascii=False)}],
+    text = _call("summary", SUMMARY_SYSTEM, [{"type": "text", "text":
+                 f"<report>\n{json.dumps(slim, ensure_ascii=False)}\n</report>\n\n"
+                 f"Write the summary in {language}."}],
                  effort="medium", max_tokens=16000)
     return text
+
+
+SUMMARY_SYSTEM = """\
+You turn the evaluation report of a teachable object-recognition app into a short \
+summary for managers who decide whether the project continues. They are not \
+computer-vision specialists, so use plain words and explain any term you need.
+
+The report (JSON in <report>) tests the app on pictures it was never taught. Key \
+fields: "current" and "recommended" give results at two decision thresholds; \
+"correct" counts test views of taught items named right; "dangerous" counts \
+confident wrong names (a wrong label, or a never-taught item taken for a taught \
+one); "rejected" counts never-taught items correctly called unknown; "uncertain" \
+means the app said it was unsure, which is safe. Dangerous errors matter most: \
+the goal is zero, even at the cost of more "unsure" answers.
+
+Cover, in this order: what was tested (how many items and views); how often it \
+was right and how many dangerous errors it made; what the recommended threshold \
+would change; how much to trust the numbers given the test size; one or two next \
+steps. Use only figures that appear in the report, quoted exactly. Markdown with \
+a short title and a few bullet points, about 200 words."""
 
 
 # -- questions about memory --------------------------------------------------------------
@@ -278,11 +324,16 @@ def ask_memory(question, labels, evalset=None, lang="en"):
     meta = {"today": time.strftime("%Y-%m-%d"), "objects_memory": rows,
             "test_set": evalset or {}}
     language = LANGS.get(lang, "English")
-    system = (
-        "You answer questions about a personal object memory using only the JSON "
-        "metadata given (labels, number of taught views, dates; and the test set "
-        "counts). You cannot see the pictures. If the metadata cannot answer the "
-        "question, say so briefly. Be short.")
-    return _call("ask", system, [{"type": "text", "text":
-                 f"Metadata:\n{json.dumps(meta, ensure_ascii=False)}\n\n"
-                 f"Question: {question}\nAnswer in {language}."}], effort="low")
+    return _call("ask", ASK_SYSTEM, [{"type": "text", "text":
+                 f"<metadata>\n{json.dumps(meta, ensure_ascii=False)}\n</metadata>\n\n"
+                 f"<question>{question}</question>\n\nAnswer in {language}."}], effort="low")
+
+
+ASK_SYSTEM = """\
+You answer a person's questions about their private object memory app. <metadata> \
+holds everything you know: each taught label with its number of views and the \
+first and last time it was taught, plus how many test pictures each label has. \
+You cannot see any pictures. Answer from the metadata in two or three sentences; \
+when it cannot answer the question, say what it does show instead. Point out \
+anything that looks like a mistake the person would want to fix, such as two \
+labels that differ only by accents or spelling."""

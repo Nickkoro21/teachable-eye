@@ -69,7 +69,7 @@ flagged `background`. Bursts keep up to 10 views in 5 s, a view only if cosine <
 zoom 70 %, mirror, darker; people: mirror, darker — faces are never cropped). Variants carry `parent`
 and `aug`, have their own thumbnails, are listed under their view in Memory, and are deleted with it.
 
-**Runtime**: `uv run teachable-eye --host 127.0.0.1 --no-https` behind **Tailscale Serve** on port 8443
+**Runtime**: `uv run teachable-eye --host 127.0.0.1 --no-https` (on the author's PC started at sign-in by a local helper script, hidden, with logs and crash restart) behind **Tailscale Serve** on port 8443
 (trusted certificate, phone reachable away from home, nothing exposed on the Wi-Fi). Alternative:
 `--host 0.0.0.0` with the self-signed certificate (`/cert.crt`). Only one process may open a shard
 directory (Qdrant Edge); a second instance needs `TEYE_DATA_DIR`. Models live in `data/models/`

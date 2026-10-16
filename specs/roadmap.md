@@ -80,7 +80,7 @@ Observations from phone tests to carry forward:
 dangerous errors). Encoder comparison on the same data: `tools/evaluate.py --encoders`. Optional Claude
 help (Anthropic API, `claude-opus-5-5`) built as TG8; a live smoke test suggested Greek names for two
 object crops and skipped a third crop in which YuNet found a face (~800 tokens in total). Fixed an overnight crash in People mode
-(numpy float32 in face boxes). 59 tests passing.
+(numpy float32 in face boxes). 59 tests passing. Later the same day: Claude prompts rewritten per Anthropic's guidance for Opus 5.5 / Sonnet 5.5 (context and purpose, XML-tagged data, pictures first); the server now starts at Windows sign-in (local helper `teye-autostart.ps1` outside the repo: hidden, logs, restart after a crash).
 
 ## Next steps (in order)
 1. ~~**Multi-label a photo**~~ — done 2026-10-15 (R32): on a paused photo, "Label all" lists every box
