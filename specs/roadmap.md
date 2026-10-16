@@ -103,7 +103,7 @@ object crops and skipped a third crop in which YuNet found a face (~800 tokens i
   not the individual keys, so a generic detector is not enough. Proposed design: on a reference photo
   the user marks where each part is *relative to its object* and teaches its states ("clip closed" /
   "clip open"); live, the object is tracked, each part's region is cropped at full resolution and
-  its state is decided by k-NN with the same known/uncertain/unknown policy (unsure = ,
+  its state is decided by k-NN with the same known/uncertain/unknown policy (unsure = `uncertain`,
   never a guess). Later: re-locate a part when the angle changes with DINOv2 patch matching. This is
   the same mechanism as gear down / landing light on the aircraft. Works today by hand: Photo, drag a
   box over the part, TEACH, then Live follows that box.
