@@ -555,8 +555,13 @@ function renderCard() {
   const card = $("card");
   const r = currentTarget();
   if (!r || r.decision === "pending" || state.burst) { card.hidden = true; return; }
+  // Unknown: the "nearest" examples are not near at all (e.g. 0.13), so they
+  // are noise. The card appears only to offer Claude's opinion, if enabled.
+  const unknown = r.decision === "unknown";
+  const asked = state.opinion && state.opinion.rid === r.id;
+  if (unknown && !assistOk() && !asked) { card.hidden = true; return; }
   const name = r.label || (r.guess ? `${t("maybe")} ${r.guess}?` : t("unknown"));
-  const nbrs = (r.neighbours || []).map((n) => `
+  const nbrs = (unknown ? [] : r.neighbours || []).map((n) => `
     <div class="nbr">${n.thumb ? `<img src="/thumb/${state.task}/${n.thumb}" alt="">` : ""}
       ${escapeHtml(n.label)}<br>${n.score.toFixed(2)}${n.aug ? ` ${AUG_ICON[n.aug] || ""}` : ""}</div>`).join("");
   card.innerHTML = `<div class="head"><span class="dec" style="color:${COLORS[r.decision]}">

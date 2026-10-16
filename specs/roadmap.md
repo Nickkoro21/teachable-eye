@@ -97,6 +97,16 @@ object crops and skipped a third crop in which YuNet found a face (~800 tokens i
    detection/tracking spike on the first phone clips).
 
 ## Backlog / ideas (research before scheduling)
+- **Parts and their state (inspection points)** — e.g. the clip of a hatch, a switch in the wrong
+  position, a button. Test 2026-10-16 on a phone photo of a handset: the prompt-free detector found
+  0 parts at live resolution, 2 at 1280 px, and on a zoomed crop the logo, a label and the ring but
+  not the individual keys, so a generic detector is not enough. Proposed design: on a reference photo
+  the user marks where each part is *relative to its object* and teaches its states ("clip closed" /
+  "clip open"); live, the object is tracked, each part's region is cropped at full resolution and
+  its state is decided by k-NN with the same known/uncertain/unknown policy (unsure = ,
+  never a guess). Later: re-locate a part when the angle changes with DINOv2 patch matching. This is
+  the same mechanism as gear down / landing light on the aircraft. Works today by hand: Photo, drag a
+  box over the part, TEACH, then Live follows that box.
 - **FOD (foreign object debris) detection** on runway/apron surfaces as a second demo: learn what the
   clean surface looks like, flag patches that differ (anomaly detection, Phase 7 technique). Came from
   a phone test where a chewing gum on grass was not a detector "object".
