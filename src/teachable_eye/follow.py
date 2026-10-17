@@ -10,30 +10,24 @@ milliseconds per frame and reports a confidence score; a track that stays
 unsure for LOST_FRAMES frames is dropped.
 """
 import time
-import urllib.request
 
 import cv2
 
 from teachable_eye.detect import STABLE_FRAMES, Track, padded_crop
-from teachable_eye.encoders import model_dir
+from teachable_eye.encoders import download_verified, model_dir
 
-VITTRACK = ("object_tracking_vittrack_2023sep.onnx",
-            "https://github.com/opencv/opencv_zoo/raw/main/models/"
-            "object_tracking_vittrack/object_tracking_vittrack_2023sep.onnx")
+VITTRACK = ("object_tracking_vittrack_2023sep.onnx",      # pinned commit + SHA-256
+            "https://github.com/opencv/opencv_zoo/raw/fef72f8fa7c52eaf116d3df358d24e6e959ada0e/"
+            "models/object_tracking_vittrack/object_tracking_vittrack_2023sep.onnx",
+            "2990f0b7cd44d92afa48cd97db6de7be113fc1d9594fddb74e2725c10478e91d")
 MIN_SCORE = 0.25     # below this a frame counts as "not sure where it is"
 LOST_FRAMES = 8      # that many unsure frames in a row and the track ends
 DUPLICATE_IOU = 0.5  # a detector box overlapping this much is the same thing
 
 
 def _model():
-    name, url = VITTRACK
-    path = model_dir("opencv") / name
-    if not path.exists():
-        print(f"downloading {name} (OpenCV Model Zoo, Apache-2.0)...")
-        tmp = path.with_suffix(".part")
-        urllib.request.urlretrieve(url, tmp)
-        tmp.replace(path)
-    return str(path)
+    name, url, digest = VITTRACK
+    return str(download_verified(url, model_dir("opencv") / name, digest))
 
 
 def iou(a, b):

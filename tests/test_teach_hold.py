@@ -322,3 +322,49 @@ def test_refresh_variants_rebuilds_them_with_the_new_profile(task, monkeypatch):
     new_thumbs = set(task.thumbs.glob("*.jpg"))
     assert len(new_thumbs) == 1 + strong                 # old variant thumbs gone
     assert len(old_thumbs & new_thumbs) == 1             # only the view's own thumb
+
+
+def test_two_photos_never_mix_their_boxes(task):
+    """The phone and the PC may each have a photo open (review 2026-10-17)."""
+    task.detector.detect_once = lambda frame: [([0.1, 0.1, 0.3, 0.3], frame[:20, :20].copy())]
+    first = np.full((100, 100, 3), 30, np.uint8)
+    task.still(first)
+    sid_a = task.last_still_id
+    task.still(np.full((100, 100, 3), 220, np.uint8))     # another client's photo
+    hid = task.hold(0, from_still=True, still_id=sid_a)
+    assert task.held_crops(hid)[0].mean() == 30              # photo A's crop, not B's
+    assert task.held_crops(task.hold(0, from_still=True))[0].mean() == 220   # latest
+    with pytest.raises(LookupError, match="expired"):
+        task.hold(0, from_still=True, still_id="0" * 32)
+    for _ in range(6):                                       # only the last few are kept
+        task.still(first)
+    with pytest.raises(LookupError, match="expired"):
+        task.hold(0, from_still=True, still_id=sid_a)
+
+
+def test_a_failed_save_keeps_the_selection(task, monkeypatch):
+    """A GPU or disk error must not throw away a (long) video teach."""
+    task.process(np.zeros((100, 100, 3), np.uint8), now=1.0)
+    hid = task.hold(7)
+
+    def broken(points):
+        raise RuntimeError("CUDA out of memory")
+    monkeypatch.setattr(task.memory, "teach_many", broken)
+    with pytest.raises(RuntimeError):
+        task.teach_held(hid, "cup")
+    monkeypatch.undo()
+    assert task.teach_held(hid, "cup")                       # Save again works
+
+
+def test_runner_ups_survive_a_label_that_fills_the_pool(tmp_path, monkeypatch):
+    """One video-taught label can fill all looked-at points (review #4)."""
+    from teachable_eye import memory as memory_mod
+    monkeypatch.setattr(memory_mod, "CANDIDATE_POOL", 5)
+    mem = TaskMemory(tmp_path / "m2", 4, "objects", config.TaskThresholds(0.9, 0.05))
+    for i in range(10):
+        mem.teach([1.0, 0.01 * i, 0.0, 0.0], "mug")
+    mem.teach([0.7, 0.7, 0.0, 0.0], "cup")
+    mem.teach([0.0, 0.0, 1.0, 0.0], "hat")
+    labels = [c[0] for c in mem.recognize([1.0, 0.0, 0.0, 0.0]).candidates]
+    assert labels[:3] == ["mug", "cup", "hat"]
+    mem.close()

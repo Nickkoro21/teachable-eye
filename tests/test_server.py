@@ -166,3 +166,31 @@ def test_a8_dead_previous_camera_does_not_kill_the_new_one(setup, monkeypatch):
         with client.websocket_connect("/ws?task=objects") as second:
             second.send_bytes(jpeg())
             assert "rows" in second.receive_json()
+
+
+def test_foreign_hosts_and_origins_are_refused(setup):
+    """DNS rebinding / cross-site requests (security review 2026-10-17)."""
+    client, task = setup
+    assert client.get("/api/status", headers={"Host": "evil.example"}).status_code == 400
+    res = client.post("/api/wipe", json={"task": "objects"},
+                      headers={"Origin": "https://evil.example"})
+    assert res.status_code == 403
+    with pytest.raises(WebSocketDisconnect):
+        with client.websocket_connect("/ws?task=objects",
+                                      headers={"Origin": "https://evil.example"}) as ws:
+            ws.receive_json()
+    # our own page, and tools without an Origin, still work
+    assert client.post("/api/rename", json={"task": "objects", "label": "a", "to": "b"},
+                       headers={"Origin": "http://testserver"}).status_code == 200
+
+
+def test_huge_pictures_and_bad_boxes_are_refused(setup):
+    from teachable_eye.server import decode_jpeg
+    client, task = setup
+    ok, buf = cv2.imencode(".png", np.zeros((8000, 6000, 1), np.uint8))   # 48 MP
+    with pytest.raises(ValueError, match="too large"):
+        decode_jpeg(buf.tobytes())
+    for box in ([0.1, 0.1, 0.5], [0.5, 0.1, 0.1, 0.5], [0.1, 0.1, 1.5, 0.5]):
+        assert client.post("/api/follow", json={"task": "objects", "box": box}).status_code in (400, 422)
+    assert client.post("/api/teach", json={"task": "objects", "hold": "h1",
+                                           "label": "x" * 61}).status_code == 400

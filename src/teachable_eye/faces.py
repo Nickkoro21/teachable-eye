@@ -11,19 +11,24 @@ makes the identity vector stable when the head turns or tilts.
 """
 import threading
 import time
-import urllib.request
 
 import cv2
 import numpy as np
 
 from teachable_eye.detect import STABLE_FRAMES, DEAD_SECONDS, Track
-from teachable_eye.encoders import model_dir
+from teachable_eye.encoders import download_verified, model_dir
 
-ZOO = "https://github.com/opencv/opencv_zoo/raw/main/models"
+# Pinned to the commit of each file and checked by SHA-256 (security review
+# 2026-10-17): a moving branch or a tampered file is never loaded.
+ZOO = "https://github.com/opencv/opencv_zoo/raw/{commit}/models"
 YUNET = ("face_detection_yunet_2023mar.onnx",
-         f"{ZOO}/face_detection_yunet/face_detection_yunet_2023mar.onnx")
+         ZOO.format(commit="f12e12798e8314f7c074a6656816c048dcc95b7a")
+         + "/face_detection_yunet/face_detection_yunet_2023mar.onnx",
+         "8f2383e4dd3cfbb4553ea8718107fc0423210dc964f9f4280604804ed2552fa4")
 SFACE = ("face_recognition_sface_2021dec.onnx",
-         f"{ZOO}/face_recognition_sface/face_recognition_sface_2021dec.onnx")
+         ZOO.format(commit="ba91a3b91d00d76e86540d4013f944bd6b514e39")
+         + "/face_recognition_sface/face_recognition_sface_2021dec.onnx",
+         "0ba9fbfa01b5270c96627c4ef784da859931e02f04419c829e83484087c34e79")
 SFACE_DIM = 128
 
 SCORE = 0.80        # YuNet confidence floor
@@ -32,15 +37,9 @@ IOU_MATCH = 0.3     # box overlap that continues a track
 DETECT_SIDE = 640   # faces are detected on a frame scaled to this long side
 
 
-def _model(name_url):
-    name, url = name_url
-    path = model_dir("opencv") / name
-    if not path.exists():
-        print(f"downloading {name} (OpenCV Model Zoo, Apache-2.0)...")
-        tmp = path.with_suffix(".part")
-        urllib.request.urlretrieve(url, tmp)
-        tmp.replace(path)
-    return str(path)
+def _model(spec):
+    name, url, digest = spec
+    return str(download_verified(url, model_dir("opencv") / name, digest))
 
 
 _lock = threading.Lock()

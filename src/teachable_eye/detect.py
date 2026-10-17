@@ -105,11 +105,17 @@ class Track:
                 round(float(x2) / w, 4), round(float(y2) / h, 4)]
 
 
+# The YOLOE file is a pickle (loading runs code): only the known file is used.
+WEIGHTS_SHA256 = "bf39e17c356f4b73977aa978bbdf6d19d0830e6bff46727d2d1f260414e41e0f"
+
+
 def weights_path():
     path = model_dir() / WEIGHTS
     if not path.exists():
         from ultralytics.utils.downloads import attempt_download_asset
         attempt_download_asset(str(path))
+        from teachable_eye.encoders import check_digest
+        check_digest(path, WEIGHTS_SHA256)
     return str(path)
 
 

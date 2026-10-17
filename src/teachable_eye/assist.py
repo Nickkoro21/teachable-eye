@@ -318,8 +318,9 @@ def ask_memory(question, labels, evalset=None, lang="en"):
         times = sorted(e.get("ts") or 0 for e in g["examples"])
         rows.append({
             "label": g["label"], "views": g["count"],
-            "first_taught": time.strftime("%Y-%m-%d %H:%M", time.localtime(times[0])) if times else None,
-            "last_taught": time.strftime("%Y-%m-%d %H:%M", time.localtime(times[-1])) if times else None,
+            # the day is enough to answer "when"; times of day stay on the PC
+            "first_taught": time.strftime("%Y-%m-%d", time.localtime(times[0])) if times else None,
+            "last_taught": time.strftime("%Y-%m-%d", time.localtime(times[-1])) if times else None,
         })
     meta = {"today": time.strftime("%Y-%m-%d"), "objects_memory": rows,
             "test_set": evalset or {}}

@@ -63,6 +63,12 @@ def read_wav(data):
             if w.getsampwidth() != 2:
                 raise ValueError("expected 16-bit PCM audio")
             rate, channels = w.getframerate(), w.getnchannels()
+            # check the length BEFORE resampling: a tiny declared rate would
+            # otherwise blow a small file up to gigabytes
+            if not 8_000 <= rate <= 48_000 or not 1 <= channels <= 2:
+                raise ValueError("expected 8-48 kHz mono or stereo audio")
+            if w.getnframes() / rate > MAX_SECONDS:
+                raise ValueError("too long: say just the name, e.g. “this is my hat”")
             pcm = np.frombuffer(w.readframes(w.getnframes()), dtype="<i2")
     except (wave.Error, EOFError):
         raise ValueError("not a WAV recording") from None

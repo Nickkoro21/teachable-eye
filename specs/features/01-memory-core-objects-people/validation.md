@@ -26,6 +26,9 @@ Every item is scored **pass/fail**. The feature is done when all automated check
 | A18 | Video teach: no stop before time; a 180° turn keeps both ends; 40 very different views keep exactly 15; a long recording is thinned evenly and stored small | R49 |
 | A19 | Recognition lists one best score per nearby label, best first | R50 |
 | A20 | Every variant of every profile is a valid picture; faces keep their size and are never cropped; Update variants swaps basic for strong and deletes the old variant thumbnails; the evaluation reports none/basic/strong on the same test set | R51, R52 |
+| A21 | Foreign Host → 400; cross-site POST → 403; cross-site camera socket refused; own origin and tools without Origin work | N8 |
+| A22 | 48 MP picture, 4 kHz audio, bad boxes, 61-character label refused | N9 |
+| A23 | Two open photos never mix crops; an unknown photo id is refused; a failed save keeps the selection; runner-ups survive one label filling the pool; forgetting removes test views and reports | R53, N10, R50 |
 | A16 | Second opinion returns only a candidate label (never an invented one), never sends a face; questions and summaries send no pictures and no per-view rows | R38-R40 |
 
 ## Level 2: Measured (recorded in the PR description)

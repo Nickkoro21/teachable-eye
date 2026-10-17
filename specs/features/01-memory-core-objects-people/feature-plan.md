@@ -129,3 +129,14 @@ Recorded here so the spec matches the build (no drift):
 | "Tap the label to see the next likely labels" | R50: runner-up labels with scores and gap |
 | "Augmentation one level further: pieces of the picture and rotations" | R51-R52: strong profile (pieces keep ~56 %, quarter hidden, ±15° turns; faces: tilt ±8°, light, blur, chin hidden), Update variants, profile comparison in the evaluation. Applied to the author's memories: objects 22 views → 286 variants, people 89 views → 623 variants (26 s) |
 | "Can it tell a live face from a photo?" | Researched (research/05-face-liveness.md); proposed as a separate spike with its own measurement, not part of feature 01 |
+
+## Deep review with sub-agents (2026-10-17)
+
+Three read-only reviewers (backend, phone app, security & privacy) reported 32 findings; all
+confirmed ones were fixed the same day, each with a regression test where it can be tested.
+
+| Area | Main findings → fix |
+|---|---|
+| Security | No Host/Origin check (DNS rebinding, cross-site socket/POSTs) → N8. Forget left test views and reports → N10. Unpinned model downloads, unrestricted local CA → N11. Unbounded inputs (decompression bomb, 100 Hz WAV → GB, holds/bursts) → N9. Labels to Claude carried times of day → dates only |
+| Backend | Memory writes raced Update variants (orphan variants of a forgotten person) → writes through the worker. Phone and PC photos shared one state → per-photo ids (R53). A failed save lost a long video teach → selection kept, 503. Runner-ups collapsed to one label → re-query without found labels. Scans stopped at 100 000 points → paged. Refresh dropped unrebuildable variants → only rebuilt views touched. Burst status raced thinning → under the lock |
+| Phone app | Frozen photo was a later, half-size frame → the analysed picture is copied before waiting. Tap near a corner resized the box → drags start after 8 px; the label is checked first. A failed edit deleted the box → removed only after the new one arrives. Picture mode reconnected the camera socket on screen unlock → camera mode only. Opinion/runner-ups leaked to other objects; late answers applied after leaving → cleared, epoch check. Photo/TEACH during a video teach, double TEACH/Video → guarded. One lost poll ended a recording → three in a row. Unreadable files gave a black screen → message and next file. Wake lock re-taken; stale camera zoom cleared; typed names never overwritten; service worker caches only good answers, one version per file |

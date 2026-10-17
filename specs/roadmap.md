@@ -82,6 +82,12 @@ help (Anthropic API, `claude-opus-5-5`) built as TG8; a live smoke test suggeste
 object crops and skipped a third crop in which YuNet found a face (~800 tokens in total). Fixed an overnight crash in People mode
 (numpy float32 in face boxes). 59 tests passing. Later the same day: Claude prompts rewritten per Anthropic's guidance for Opus 5.5 / Sonnet 5.5 (context and purpose, XML-tagged data, pictures first); the server now starts at Windows sign-in (local helper `teye-autostart.ps1` outside the repo: hidden, logs, restart after a crash).
 
+**2026-10-17** — Video teach runs until Stop and keeps the 15 most different views (R49); runner-up
+labels on tap (R50); strong augmentation profile + Update variants + profile comparison (R51-R52),
+applied to the author's memories (objects 286, people 623 variants). Liveness researched
+(research/05). Deep review by three sub-agents (backend, phone, security): 32 findings, fixed with
+regression tests (N8-N11, R53). 81 tests passing.
+
 ## Next steps (in order)
 1. ~~**Multi-label a photo**~~ — done 2026-10-15 (R32): on a paused photo, "Label all" lists every box
    (detected and user-drawn) with a thumbnail and a label field each (existing-label chooser,

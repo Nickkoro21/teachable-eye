@@ -127,12 +127,29 @@ class TaskMemory:
                 self.shard.flush()
         return len(ids)
 
-    def forget_variants(self):
-        """Delete every augmented variant (their views stay). Returns how many."""
+    def _all(self, with_vector=False, filter=None):
+        """Every record (scrolling page by page: a single page stops at
+        SCAN_LIMIT, which a large memory exceeds)."""
+        out, offset = [], None
         with self._lock:
-            records, _ = self.shard.scroll(ScrollRequest(
-                limit=SCAN_LIMIT, with_payload=True))
-            ids = [str(r.id) for r in records if r.payload.get("parent")]
+            while True:
+                kw = {"limit": SCAN_LIMIT, "with_payload": True, "with_vector": with_vector}
+                if filter is not None:
+                    kw["filter"] = filter
+                if offset is not None:
+                    kw["offset"] = offset
+                records, offset = self.shard.scroll(ScrollRequest(**kw))
+                out.extend(records)
+                if offset is None or not records:
+                    return out
+
+    def forget_variants(self, parents=None):
+        """Delete the augmented variants (of `parents` only, if given; their
+        views stay). Returns how many."""
+        with self._lock:
+            records = self._all()
+            ids = [str(r.id) for r in records if r.payload.get("parent")
+                   and (parents is None or r.payload["parent"] in parents)]
             if ids:
                 self.shard.update(UpdateOperation.delete_points(ids))
                 self.shard.flush()
@@ -141,8 +158,7 @@ class TaskMemory:
     def forget_example(self, pid):
         """Delete one taught view and the augmented variants made from it."""
         with self._lock:
-            records, _ = self.shard.scroll(ScrollRequest(
-                limit=SCAN_LIMIT, with_payload=True))
+            records = self._all()
             ids = [str(r.id) for r in records
                    if str(r.id) == pid or r.payload.get("parent") == pid]
             if ids:
@@ -191,6 +207,21 @@ class TaskMemory:
             seen.add(root)
             neighbours.append(Neighbour(root, label, float(h.score),
                                         h.payload.get("thumb"), h.payload.get("aug")))
+        # one label can fill the whole pool (a video teach with its variants is
+        # 15 x 14 points): look again without the labels found so far
+        q = list(map(float, vector))
+        while best and len(best) < labels:
+            with self._lock:
+                more = self.shard.query(QueryRequest(
+                    query=Query.Nearest(q, using=VECTOR),
+                    filter=Filter(
+                        must=[FieldCondition(key="kind", match=MatchValue(value=TAUGHT))],
+                        must_not=[FieldCondition(key="label", match=MatchValue(value=lb))
+                                  for lb in best]),
+                    limit=1, with_payload=True))
+            if not more:
+                break
+            best[more[0].payload.get("label", "")] = float(more[0].score)
         decision = decide(neighbours, self.thresholds)
         decision.candidates = list(best.items())[:labels]
         return decision
@@ -204,9 +235,7 @@ class TaskMemory:
 
         Augmented variants are internal and not listed (they go with their view).
         """
-        with self._lock:
-            records, _ = self.shard.scroll(ScrollRequest(
-                limit=SCAN_LIMIT, with_payload=True))
+        records = self._all()
         variants = {}
         for r in records:
             parent = r.payload.get("parent")
@@ -232,9 +261,7 @@ class TaskMemory:
     def points(self):
         """Every point with its vector, for evaluation:
         [{"id", "label", "parent", "aug", "vector"}]."""
-        with self._lock:
-            records, _ = self.shard.scroll(ScrollRequest(
-                limit=SCAN_LIMIT, with_payload=True, with_vector=True))
+        records = self._all(with_vector=True)
         out = []
         for r in records:
             vec = r.vector.get(VECTOR) if isinstance(r.vector, dict) else r.vector
@@ -247,18 +274,13 @@ class TaskMemory:
 
     def thumbs_in_use(self):
         """Every thumbnail file name still referenced by a point."""
-        with self._lock:
-            records, _ = self.shard.scroll(ScrollRequest(
-                limit=SCAN_LIMIT, with_payload=True))
+        records = self._all()
         names = set()
         for r in records:
             names.update(v for v in (r.payload.get("thumb"), r.payload.get("crop")) if v)
         return names
 
     def _ids_of(self, label):
-        with self._lock:
-            records, _ = self.shard.scroll(ScrollRequest(
-                limit=SCAN_LIMIT, with_payload=False,
-                filter=Filter(must=[FieldCondition(
-                    key="label", match=MatchValue(value=label))])))
+        records = self._all(filter=Filter(must=[FieldCondition(
+            key="label", match=MatchValue(value=label))]))
         return [str(r.id) for r in records]

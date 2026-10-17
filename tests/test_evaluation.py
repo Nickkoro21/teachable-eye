@@ -139,3 +139,17 @@ def test_a13_server_eval_flow(task, tmp_path):
     assert "vector" not in saved["items"][0]
     assert client.get("/api/reports/..%2Fsecret.md").status_code in (400, 404)
     assert client.post("/api/eval/forget", json={"task": "objects", "id": iid}).json()["deleted"]
+
+
+def test_forgetting_a_label_removes_its_test_views_and_reports(task, tmp_path):
+    """Forgetting someone is complete: test views and reports go too."""
+    task.process(np.zeros((100, 100, 3), np.uint8), now=1.0)
+    task.eval_held(task.hold(7), "person-a")
+    task.eval_held(task.hold(7), "person-b")
+    reports = tmp_path / "reports"
+    reports.mkdir(exist_ok=True)
+    (reports / "eval-objects-20261017-100000.json").write_text('{"label": "person-a"}')
+    (reports / "eval-objects-20261017-100001.json").write_text('{"label": "person-b"}')
+    task.forget_everywhere("person-a")
+    assert [i["label"] for i in task.evalset.items()] == ["person-b"]
+    assert sorted(p.name for p in reports.iterdir()) == ["eval-objects-20261017-100001.json"]

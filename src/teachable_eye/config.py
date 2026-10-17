@@ -93,6 +93,10 @@ VOICE = os.environ.get("VOICE", "on").strip().lower() not in ("off", "0", "false
 
 PORT = _num("TEYE_PORT", 8765, int)
 
+# The public name the phone uses (e.g. the Tailscale Serve name). Kept in the
+# local .env, never in the repo; requests for any other host name are refused.
+PUBLIC_HOST = os.environ.get("TEYE_PUBLIC_HOST", "").strip().lower()
+
 # Optional help from Claude (Anthropic API): name suggestions, a second
 # opinion, report summaries, questions about memory. Off unless ASSIST=on;
 # the key comes only from ANTHROPIC_API_KEY. Objects only: faces and

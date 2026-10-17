@@ -212,11 +212,16 @@ const state = {
   opinion: null,         // Claude's second opinion for the chosen box
   memTab: "memory", lastEval: null,
   dismissed: new Set(),  // live track ids the user dropped with ✕
+  epoch: 0,              // bumped when the screen changes: late answers are dropped
+  holding: false, burstStarting: false, burstFails: 0,
   view: { s: 1, x: 0, y: 0 },   // pinch zoom of the paused photo (screen space)
   pinch: null, camZoom: null,
   source: "camera",      // or "picture": a file from the device, no camera
   files: [], fileIdx: 0, browse: false,
 };
+
+// The photo an action is about (the PC keeps the last few, per client).
+function stillId() { return state.still ? state.still.sid || null : null; }
 
 // Only the live camera picture is shown mirrored (front camera).
 function mirrored() { return state.facing === "user" && state.source === "camera"; }
@@ -315,7 +320,7 @@ function goHome() {
   closeTeach();
   const old = state.ws; state.ws = null; old?.close();
   state.stream?.getTracks().forEach((tr) => tr.stop());
-  state.stream = null; video.srcObject = null;
+  state.stream = null; video.srcObject = null; state.camZoom = null;
   state.rows = []; backToLive();
   $("landing").hidden = false;
   checkServer();
@@ -345,7 +350,7 @@ async function flipCamera() {
   stopBurst(false);
   backToLive();
   state.stream?.getTracks().forEach((tr) => tr.stop());
-  state.stream = null;
+  state.stream = null; state.camZoom = null;
   await startCamera();
   if (state.running) { const old = state.ws; state.ws = null; old?.close(); connect(); }
 }
@@ -758,7 +763,7 @@ async function askOpinion() {
   state.opinion = { rid: r.id, pending: true };
   renderCard();
   try {
-    const { hold } = await api("/api/hold", { task: state.task, id: r.id, still: !!state.still });
+    const { hold } = await api("/api/hold", { task: state.task, id: r.id, still: !!state.still, still_id: stillId() });
     const res = await api("/api/assist/opinion", { task: state.task, hold, lang: state.lang });
     state.opinion = { rid: r.id, hold, preview, ...res };
   } catch (err) {
@@ -799,20 +804,23 @@ function updateHint() {
 // TEACH freezes the selection on the server at once (a "hold"), so moving the
 // phone while typing the name cannot lose the object.
 async function teachSelected() {
+  if (state.burst || state.holding || state.naming) return;
   const r = activeTarget();
   if (!r) return;
   const preview = cropPreview(r.box);
+  state.holding = true;
   try {
-    const res = await api("/api/hold", { task: state.task, id: r.id, still: !!state.still });
+    const res = await api("/api/hold", { task: state.task, id: r.id, still: !!state.still, still_id: stillId() });
     openNameSheet(res.hold, preview ? [preview] : [], r);
   } catch (err) { toast(err.message, 4000); }
+  finally { state.holding = false; }
 }
 
 // Teach from video: collect distinct views of the chosen object for a few
 // seconds while the user moves around it, then name them all at once.
 async function startBurst() {
   if (state.burst) { stopBurst(true); return; }       // pressed again: stop
-  if (state.counting) return;
+  if (state.counting || state.burstStarting) return;
   if (state.still) backToLive();
   const chosen = activeTarget();
   if (!chosen) return;
@@ -821,9 +829,14 @@ async function startBurst() {
   const r = state.rows.find((x) => x.id === chosen.id);
   if (!r) { toast(t("nothingSelected")); return; }
   let res;
+  const epoch = state.epoch;
+  state.burstStarting = true;
   try {
     res = await api("/api/burst", { task: state.task, id: r.id, seconds: VIDEO_MAX_SECONDS });
   } catch (err) { toast(err.message, 4000); return; }
+  finally { state.burstStarting = false; }
+  if (epoch !== state.epoch || !state.running) return;   // left meanwhile; it expires
+  state.burstFails = 0;
   state.burst = { id: res.burst, tid: r.id, target: r };
   $("rec").hidden = false; $("recLeft").textContent = "0"; $("recViews").textContent = "";
   updateHint(); renderCard();
@@ -833,8 +846,12 @@ async function startBurst() {
       const st = await api(`/api/burst/${state.burst.id}?task=${state.task}`, null, "GET");
       $("recLeft").textContent = Math.floor(VIDEO_MAX_SECONDS - st.left);   // seconds so far
       $("recViews").textContent = t("recViews", st.views);
+      state.burstFails = 0;
       if (st.done) stopBurst(true);
-    } catch { stopBurst(false); }
+    } catch (err) {
+      // one lost answer is not the end of a recording; three in a row are
+      if (++state.burstFails >= 3) { toast(err.message, 5000); stopBurst(true); }
+    }
   }, 400);
 }
 
@@ -928,7 +945,9 @@ async function loadChoices(r) {
     box.appendChild(b);
   }
   wrap.hidden = false;
-  if (likely && labels.some((g) => g.label === likely)) $("labelInput").value = likely;
+  if (likely && labels.some((g) => g.label === likely) && !$("labelInput").value.trim()) {
+    $("labelInput").value = likely;
+  }
   markChoice();
 }
 
@@ -981,7 +1000,8 @@ async function submitTeach(ev) {
 // Every box of the paused photo in one list: real objects first (left to
 // right), background last. Pre-filled when memory already knows the object.
 async function openMulti() {
-  if (!state.still) return;
+  if (!state.still || state.burst || state.multi) return;
+  const epoch = state.epoch;
   const rows = [...state.still.rows].sort((a, b) =>
     (a.background - b.background) || (a.box[0] - b.box[0]));
   if (!rows.length) { toast(t("noBoxes")); return; }
@@ -989,6 +1009,7 @@ async function openMulti() {
   try {
     labels = (await (await fetch(`/api/memory?task=${state.task}`)).json()).labels || [];
   } catch { /* typed names still work */ }
+  if (epoch !== state.epoch || !state.still) return;      // back to live meanwhile
   $("labelOptions").innerHTML = labels.map((g) => `<option value="${escapeHtml(g.label)}">`).join("");
   state.multiLabels = labels.map((g) => g.label);
   state.multi = rows.map((r) => r.id);
@@ -1071,7 +1092,7 @@ async function suggestNames() {
   const btn = $("multiSuggest");
   btn.disabled = true; btn.textContent = t("suggesting");
   try {
-    const res = await api("/api/assist/names", { task: state.task, lang: state.lang,
+    const res = await api("/api/assist/names", { task: state.task, lang: state.lang, still_id: stillId(),
       ids: rows.map((row) => Number(row.dataset.id)) });
     let n = 0;
     for (const it of res.items) {
@@ -1107,7 +1128,7 @@ async function saveMulti(ev) {
   let done = 0;
   for (const it of items) {
     try {
-      const { hold } = await api("/api/hold", { task: state.task, id: it.id, still: true });
+      const { hold } = await api("/api/hold", { task: state.task, id: it.id, still: true, still_id: stillId() });
       await api("/api/teach", { task: state.task, hold, label: it.label,
                                 consent: $("multiConsent").checked, eval: state.evalMode });
       const r = state.still && state.still.rows.find((q) => q.id === it.id);
@@ -1240,7 +1261,7 @@ async function sayStart() {
   if (!r) return false;
   say.target = r;
   say.preview = cropPreview(r.box);
-  say.hold = api("/api/hold", { task: state.task, id: r.id, still: !!state.still })
+  say.hold = api("/api/hold", { task: state.task, id: r.id, still: !!state.still, still_id: stillId() })
     .then((res) => res.hold).catch((err) => { toast(err.message, 4000); return null; });
   return micStart();
 }
@@ -1256,23 +1277,34 @@ async function sayDone(wav) {
 
 // -- photo mode ---------------------------------------------------------------
 async function takePhoto() {
-  if (state.counting) return;
+  if (state.counting || state.burst) return;
   await countdown(3);
   await capturePhoto();
 }
 
 async function capturePhoto(ready) {
+  const epoch = ++state.epoch;
   const blob = ready || await snapshot(STILL_SIDE, 0.9);
   if (!blob) return false;
-  const res = await fetch(`/api/still?task=${state.task}`, { method: "POST", body: blob,
-    headers: { "Content-Type": "image/jpeg" } });
-  const data = await res.json();
-  if (!res.ok) { toast(data.error || res.statusText, 4000); return false; }
-  frozen.width = grab.width; frozen.height = grab.height;
-  frozen.getContext("2d").drawImage(grab, 0, 0);
+  // copy the picture now: live frames keep reusing `grab` while we wait,
+  // and the photo shown must be exactly the one the PC analysed
+  const shot = document.createElement("canvas");
+  shot.width = grab.width; shot.height = grab.height;
+  shot.getContext("2d").drawImage(grab, 0, 0);
+  let data;
+  try {
+    const res = await fetch(`/api/still?task=${state.task}`, { method: "POST", body: blob,
+      headers: { "Content-Type": "image/jpeg" } });
+    data = await res.json().catch(() => ({}));
+    if (!res.ok) { toast(data.error || res.statusText, 4000); return false; }
+  } catch (err) { toast(err.message, 4000); return false; }
+  if (epoch !== state.epoch || !state.running) return false;   // the user moved on
+  frozen.width = shot.width; frozen.height = shot.height;
+  frozen.getContext("2d").drawImage(shot, 0, 0);
   frozen.hidden = false;
-  state.still = { rows: data.rows, w: data.w, h: data.h };
+  state.still = { rows: data.rows, w: data.w, h: data.h, sid: data.still_id || null };
   state.selected = null;
+  state.opinion = null; state.showCands = null;
   resetView();
   $("photoBtn").hidden = true; $("liveBtn").hidden = state.source === "picture";
   $("videoBtn").hidden = true; $("labelAllBtn").hidden = false;
@@ -1385,17 +1417,20 @@ $("zoomReset").onclick = () => {
 async function resumeLive() {
   const chosen = state.still && state.selected != null
     ? state.still.rows.find((r) => r.id === state.selected) : null;
+  const sid = stillId();
   backToLive();
   if (!chosen || state.task !== "objects") return;
   try {
-    const res = await api("/api/follow", { task: state.task, box: chosen.box });
+    const res = await api("/api/follow", { task: state.task, box: chosen.box, still_id: sid });
     state.selected = res.id;
     toast(t("following"));
   } catch (err) { toast(err.message, 4000); }
 }
 
 function backToLive() {
+  state.epoch++;
   state.still = null; frozen.hidden = true; state.selected = null;
+  state.opinion = null; state.showCands = null;
   resetView();
   $("photoBtn").hidden = false; $("liveBtn").hidden = true;
   $("videoBtn").hidden = false; $("labelAllBtn").hidden = true;
@@ -1425,6 +1460,12 @@ async function openFiles(list) {
   const files = [...list].filter((f) => /^(image|video)\//.test(f.type));
   [...list].filter((f) => !files.includes(f)).forEach((f) => toast(t("notMedia", f.name), 4000));
   if (!files.length) return;
+  // pictures need no camera: stop it (and its socket) if it was running
+  stopBurst(false);
+  const old = state.ws; state.ws = null; old?.close();
+  state.stream?.getTracks().forEach((tr) => tr.stop());
+  state.stream = null; video.srcObject = null; state.camZoom = null;
+  closeTeach(); backToLive();
   state.files = files; state.fileIdx = 0;
   state.source = "picture";
   state.running = true;
@@ -1439,9 +1480,15 @@ async function showFile(i) {
   state.fileIdx = i;
   const f = state.files[i];
   if (f.type.startsWith("video/")) { openVideo(f); return; }
-  const img = await loadImage(f);
-  await useImage(img, img.naturalWidth, img.naturalHeight);
-  toast(t("pictureOf", i + 1, state.files.length), 2500);
+  try {
+    const img = await loadImage(f);           // e.g. HEIC cannot be read by Chrome
+    if (!(await useImage(img, img.naturalWidth, img.naturalHeight))) throw new Error(t("notMedia", f.name));
+    toast(t("pictureOf", i + 1, state.files.length), 2500);
+  } catch (err) {
+    toast(err.message || t("notMedia", f.name), 4000);
+    if (i < state.files.length - 1) showFile(i + 1);
+    else if (!state.still) goHome();
+  }
 }
 
 function loadImage(file) {
@@ -1460,7 +1507,7 @@ async function useImage(src, w, h) {
   grab.getContext("2d").drawImage(src, 0, 0, grab.width, grab.height);
   const blob = await new Promise((r) => grab.toBlob(r, "image/jpeg", 0.92));
   closeMulti();
-  await capturePhoto(blob);
+  return capturePhoto(blob);
 }
 
 function showPictureButtons() {
@@ -1519,7 +1566,9 @@ function leavePictures() {
 
 // -- tasks --------------------------------------------------------------------
 function setTask(task) {
+  state.epoch++;
   state.task = task; state.rows = []; state.selected = null;
+  state.opinion = null; state.showCands = null;
   document.querySelectorAll("#taskSeg button").forEach((b) => b.classList.toggle("on", b.dataset.task === task));
 }
 
@@ -1720,6 +1769,8 @@ overlay.addEventListener("pointerdown", (ev) => {
   state.drag = { x0: x, y0: y, x1: x, y1: y, moved: false };
   const target = source().rows.find((r) => r.id === state.selected);
   if (!target) return;
+  const ch = state.chipHit;                   // the label: a tap opens the runner-ups
+  if (ch && x >= ch.x - 8 && x <= ch.x + ch.w + 8 && y >= ch.y - 10 && y <= ch.y + ch.h + 10) return;
   const src = source();
   const [bx, by, bw, bh] = mapper(src.w, src.h)(target.box);
   const [cx, cy] = closeSpot(bx, by, bw, bh);
@@ -1734,7 +1785,8 @@ overlay.addEventListener("pointerdown", (ev) => {
     state.drag.liveEdit = target;
   } else if (i >= 0) {                        // resize: the opposite corner stays
     const opp = cs[3 - i];
-    state.drag = { x0: opp[0], y0: opp[1], x1: x, y1: y, moved: true, edit: target.id };
+    state.drag = { x0: opp[0], y0: opp[1], x1: x, y1: y, moved: false, edit: target.id,
+                   sx: x, sy: y };
   } else if (inside) {                        // move the whole box
     state.drag = { move: [bx, by, bw, bh], sx: x, sy: y, x0: bx, y0: by,
                    x1: bx + bw, y1: by + bh, moved: false, edit: target.id };
@@ -1759,7 +1811,10 @@ overlay.addEventListener("pointermove", (ev) => {
     return;
   }
   d.x1 = x; d.y1 = y;
-  if (state.still && Math.hypot(x - d.x0, y - d.y0) > 14) d.moved = true;
+  // a drag starts after 8 px from where the finger went down (a tap near a
+  // corner must stay a tap); a new box after 14 px
+  if (state.still && (d.sx != null ? Math.hypot(x - d.sx, y - d.sy) > 8
+                                   : Math.hypot(x - d.x0, y - d.y0) > 14)) d.moved = true;
 });
 overlay.addEventListener("pointercancel", (ev) => {
   fingers.delete(ev.pointerId);
@@ -1782,9 +1837,6 @@ overlay.addEventListener("pointerup", (ev) => {
     return;
   }
   if (d.moved) {                                   // a drawn or fixed box
-    if (d.edit != null && state.still) {             // the fixed box replaces it
-      state.still.rows = state.still.rows.filter((r) => r.id !== d.edit);
-    }
     const a = toFrame(d.x0, d.y0), b = toFrame(d.x1, d.y1);
     markRegion([Math.min(a[0], b[0]), Math.min(a[1], b[1]),
                 Math.max(a[0], b[0]), Math.max(a[1], b[1])], d.edit);
@@ -1819,8 +1871,13 @@ overlay.addEventListener("pointerup", (ev) => {
 
 async function markRegion(box, replaced) {
   if (box[2] - box[0] < 0.005 || box[3] - box[1] < 0.005) return;
+  const epoch = state.epoch;
   try {
-    const res = await api("/api/region", { task: state.task, box });
+    const res = await api("/api/region", { task: state.task, box, still_id: stillId() });
+    if (epoch !== state.epoch || !state.still) return;      // the photo is gone
+    if (replaced != null) {                                   // the fixed box replaces it
+      state.still.rows = state.still.rows.filter((r) => r.id !== replaced);
+    }
     state.still.rows.push(res.row);
     state.selected = res.row.id;
     if (state.multi) multiAdopt(res.row, replaced);
@@ -1899,7 +1956,10 @@ $("wipeBtn").onclick = async () => {
 };
 document.querySelectorAll("#taskSeg button").forEach((b) => { b.onclick = () => switchTask(b.dataset.task); });
 document.addEventListener("visibilitychange", () => {
-  if (state.running && !document.hidden && (!state.ws || state.ws.readyState > 1)) connect();
+  if (!state.running || document.hidden || state.source !== "camera") return;
+  if (!state.ws || state.ws.readyState > 1) connect();
+  // Android drops the screen wake lock whenever the page is hidden
+  navigator.wakeLock?.request("screen").catch(() => {});
 });
 
 (function init() {

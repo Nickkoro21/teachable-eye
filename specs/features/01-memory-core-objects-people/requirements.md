@@ -100,3 +100,10 @@
   - Strong, people: mirror, darker, brighter, tilt ±8°, blur, chin hidden — 7 variants. Faces are never cropped (alignment).
   - **Memory → Update variants** rebuilds every view's variants with the configured profile from its kept crop (or thumbnail), so a profile change needs no re-teaching.
 - **R52**: The evaluation also scores the same test set with the variants of each profile rebuilt from the taught views (none / basic / strong): correct with no dangerous error, strangers rejected, dangerous at the current bands. The profile is chosen from these numbers.
+
+**Hardening after the deep review (2026-10-17, three review sub-agents: backend, phone app, security)**
+- **N8 Same-site only:** the server answers only to its own host names (127.0.0.1, localhost, the LAN IP when served there, and `TEYE_PUBLIC_HOST` from the local `.env`, e.g. the Tailscale name); browser requests that change something (POST, the camera socket) must come from one of those origins. Blocks DNS rebinding and cross-site requests from any page open on the PC.
+- **N9 Bounded inputs:** pictures ≤ 15 MB and ≤ 40 MP (size read from the header before decoding); voice 8–48 kHz, ≤ 15 s (checked before resampling); labels ≤ 60 characters; boxes 4 finite numbers inside 0..1; at most 50 waiting selections, 2 video teaches, 4 open photos, 300 boxes per photo, 64 crops per Claude request.
+- **N10 Forgetting is complete:** forgetting a label (or Forget everyone) also deletes its test views and the evaluation reports of that task that name it.
+- **N11 Pinned models:** OpenCV Zoo files are fetched from a fixed commit and every downloaded model (YuNet, SFace, VitTrack, YOLOE) is checked against its SHA-256 before use. The local HTTPS certificate is a CA limited to path length 0 and to this server's own names.
+- **R53**: Each photo has an id (`/api/still` returns it); hold, region, follow and name suggestions name their photo, the PC keeping the last 4 — a phone and a PC can each have a photo open without their boxes mixing. Memory changes (rename, forget) run in the same worker as teaching, so they cannot interleave with Update variants.

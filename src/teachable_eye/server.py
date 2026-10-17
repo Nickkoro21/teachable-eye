@@ -39,28 +39,80 @@ def asset_version():
     return h.hexdigest()[:10]
 
 
+MAX_IMAGE_BYTES = 15_000_000
+MAX_PIXELS = 40_000_000          # well above a 4K frame; a "decompression bomb" is refused
+
+
 def decode_jpeg(data):
-    frame = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
+    if len(data) > MAX_IMAGE_BYTES:
+        raise ValueError("picture too large")
+    buf = np.frombuffer(data, np.uint8)
+    # read the size from the header first: never decode a huge picture
+    ok, size = _image_size(data)
+    if ok and size[0] * size[1] > MAX_PIXELS:
+        raise ValueError("picture too large")
+    frame = cv2.imdecode(buf, cv2.IMREAD_COLOR)
     if frame is None:
         raise ValueError("not a JPEG/PNG image")
+    if frame.shape[0] * frame.shape[1] > MAX_PIXELS:
+        raise ValueError("picture too large")
     return frame
+
+
+def _image_size(data):
+    """(ok, (w, h)) from a JPEG or PNG header, without decoding the picture."""
+    import struct
+    if data[:8] == b"\x89PNG\r\n\x1a\n" and len(data) >= 24:
+        return True, struct.unpack(">II", data[16:24])
+    if data[:2] == b"\xff\xd8":
+        i = 2
+        while i + 9 < len(data):
+            if data[i] != 0xFF:
+                i += 1
+                continue
+            marker = data[i + 1]
+            if marker in (0xC0, 0xC1, 0xC2, 0xC3, 0xC5, 0xC6, 0xC7, 0xC9, 0xCA, 0xCB, 0xCD, 0xCE, 0xCF):
+                h, w = struct.unpack(">HH", data[i + 5:i + 9])
+                return True, (w, h)
+            seg = struct.unpack(">H", data[i + 2:i + 4])[0]
+            i += 2 + seg
+    return False, (0, 0)
+
+
+def valid_box(box):
+    """A normalised box: 4 finite numbers, 0 <= x1 < x2 <= 1, 0 <= y1 < y2 <= 1."""
+    import math
+    if len(box) != 4 or not all(isinstance(v, (int, float)) and math.isfinite(v) for v in box):
+        return False
+    x1, y1, x2, y2 = box
+    return 0 <= x1 < x2 <= 1 and 0 <= y1 < y2 <= 1
 
 
 class HoldBody(BaseModel):
     task: str
     id: int
-    still: bool = False      # the id refers to the last photo, not a live track
+    still: bool = False      # the id refers to a photo's row, not a live track
+    still_id: str | None = None   # which photo (from /api/still); None: the latest
 
 
 class RegionBody(BaseModel):
     task: str
     box: list[float]
+    still_id: str | None = None
 
 
 class BurstBody(BaseModel):
     task: str
     id: int
     seconds: float = 60.0   # runs until the user stops it; capped on the server
+
+
+MAX_LABEL = 60
+
+
+def check_label(label):
+    if label is not None and len(label) > MAX_LABEL:
+        raise HTTPException(400, f"label longer than {MAX_LABEL} characters")
 
 
 class TeachBody(BaseModel):
@@ -89,7 +141,8 @@ class TaskBody(BaseModel):
 
 class NamesBody(BaseModel):
     task: str
-    ids: list[int]           # rows of the last photo
+    ids: list[int]           # rows of a photo
+    still_id: str | None = None
     lang: str = "en"
 
 
@@ -109,9 +162,50 @@ class AskBody(BaseModel):
     lang: str = "en"
 
 
-def create_app(tasks, cert_path=None, info=None):
+LOCAL_HOSTS = ("127.0.0.1", "localhost", "[::1]", "testserver")
+
+
+def allowed_hosts(extra=()):
+    """Host names this server answers to: this PC, plus TEYE_PUBLIC_HOST (the
+    Tailscale name, kept in the local .env) and the LAN IP when served there."""
+    hosts = set(LOCAL_HOSTS) | {h for h in extra if h}
+    if config.PUBLIC_HOST:
+        hosts.add(config.PUBLIC_HOST)
+    return hosts
+
+
+def create_app(tasks, cert_path=None, info=None, hosts=None):
     """`tasks`: {name: task}. Each task has process/teach/still/reset/memory."""
     app = FastAPI(title="teachable-eye", docs_url=None, redoc_url=None)
+    hosts = allowed_hosts(hosts or ())
+
+    # Security review 2026-10-17: any web page open on this PC could reach
+    # 127.0.0.1 (DNS rebinding: an attacker's name resolving to 127.0.0.1) or
+    # open the camera socket / send POSTs from its own origin. So the Host must
+    # be one of ours, and a browser request must come from one of our origins.
+    from urllib.parse import urlsplit
+    from starlette.middleware.trustedhost import TrustedHostMiddleware
+
+    class SameOrigin:
+        def __init__(self, inner):
+            self.inner = inner
+
+        async def __call__(self, scope, receive, send):
+            if scope["type"] in ("http", "websocket"):
+                headers = dict(scope.get("headers") or [])
+                origin = headers.get(b"origin", b"").decode("latin-1")
+                unsafe = scope["type"] == "websocket" or scope.get("method") not in ("GET", "HEAD")
+                if unsafe and origin and urlsplit(origin).hostname not in hosts:
+                    if scope["type"] == "websocket":
+                        await send({"type": "websocket.close", "code": 4403})
+                    else:
+                        await JSONResponse({"error": "cross-site request refused"},
+                                           status_code=403)(scope, receive, send)
+                    return
+            await self.inner(scope, receive, send)
+
+    app.add_middleware(SameOrigin)
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=sorted(hosts))
     # one worker: models are not re-entrant and frames must stay in order
     pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="vision")
     state = {"active": None}   # the one live camera connection
@@ -228,7 +322,9 @@ def create_app(tasks, cert_path=None, info=None):
     async def hold(body: HoldBody):
         """TEACH pressed: freeze the selected crop until it gets a name."""
         try:
-            hid = await run(task_of(body.task).hold, body.id, body.still)
+            task = task_of(body.task)
+            hid = await run(lambda: task.hold(body.id, body.still, **(
+                {"still_id": body.still_id} if body.still_id else {})))
         except LookupError as exc:
             raise HTTPException(409, str(exc)) from None
         return {"hold": hid}
@@ -270,6 +366,7 @@ def create_app(tasks, cert_path=None, info=None):
     @app.post("/api/teach")
     async def teach(body: TeachBody):
         task = task_of(body.task)
+        check_label(body.label)
         if getattr(task, "needs_consent", False) and not body.consent:
             raise HTTPException(428, "consent required for a person")
         try:
@@ -285,6 +382,10 @@ def create_app(tasks, cert_path=None, info=None):
                 raise HTTPException(400, "missing hold or id")
         except (LookupError, ValueError) as exc:
             raise HTTPException(409, str(exc)) from None
+        except HTTPException:
+            raise
+        except Exception as exc:          # GPU / disk: the selection is kept
+            raise HTTPException(503, f"could not save, try again: {exc}") from None
         return {"id": pid}
 
     @app.post("/api/still")
@@ -294,20 +395,19 @@ def create_app(tasks, cert_path=None, info=None):
             frame = decode_jpeg(await request.body())
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from None
-        rows = await run(current.still, frame)
-        return {"task": task, "rows": rows,
+        rows, sid = await run(lambda: (current.still(frame),
+                                       getattr(current, "last_still_id", None)))
+        return {"task": task, "rows": rows, "still_id": sid,
                 "w": int(frame.shape[1]), "h": int(frame.shape[0])}
 
     @app.post("/api/region")
     async def region(body: RegionBody):
         """Photo mode: recognize a box the user drew where nothing was found."""
-        if len(body.box) != 4:
-            raise HTTPException(400, "box needs 4 numbers")
-        x1, y1, x2, y2 = body.box
-        if not (0 <= x1 < x2 <= 1 and 0 <= y1 < y2 <= 1):
-            raise HTTPException(400, "box must be normalised x1<x2, y1<y2 in 0..1")
+        if not valid_box(body.box):
+            raise HTTPException(400, "box must be 4 numbers, x1<x2, y1<y2 in 0..1")
         try:
-            row = await run(task_of(body.task).region, body.box)
+            task = task_of(body.task)
+            row = await run(lambda: task.region(body.box, body.still_id))
         except LookupError as exc:
             raise HTTPException(409, str(exc)) from None
         return {"row": row}
@@ -315,10 +415,11 @@ def create_app(tasks, cert_path=None, info=None):
     @app.post("/api/follow")
     async def follow(body: RegionBody):
         """Resume live view tracking a box chosen or drawn on the paused photo."""
-        if len(body.box) != 4:
-            raise HTTPException(400, "box needs 4 numbers")
+        if not valid_box(body.box):
+            raise HTTPException(400, "box must be 4 numbers, x1<x2, y1<y2 in 0..1")
         try:
-            tid = await run(task_of(body.task).follow, body.box)
+            task = task_of(body.task)
+            tid = await run(lambda: task.follow(body.box, body.still_id))
         except LookupError as exc:
             raise HTTPException(409, str(exc)) from None
         return {"id": tid}
@@ -335,8 +436,10 @@ def create_app(tasks, cert_path=None, info=None):
     async def rename(body: LabelBody):
         if not body.to:
             raise HTTPException(400, "missing new label")
+        check_label(body.to)
         try:
-            n = task_of(body.task).memory.rename(body.label, body.to)
+            mem = task_of(body.task).memory
+            n = await run(mem.rename, body.label, body.to)
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from None
         return {"changed": n}
@@ -345,15 +448,18 @@ def create_app(tasks, cert_path=None, info=None):
     @app.post("/api/forget")
     async def forget(body: LabelBody):
         task = task_of(body.task)
-        n = task.memory.forget_label(body.label)
+        n = await run(task.memory.forget_label, body.label)
         await run(task.gc_thumbs)
+        # forgetting is complete: test views and reports that name it go too
+        if hasattr(task, "forget_everywhere"):
+            await run(task.forget_everywhere, body.label)
         return {"deleted": n}
 
     @app.post("/api/forget_example")
     async def forget_example(body: ExampleBody):
         """Delete one view (with its variants) or one variant on its own."""
         task = task_of(body.task)
-        n = task.memory.forget_example(body.id)
+        n = await run(task.memory.forget_example, body.id)
         await run(task.gc_thumbs)
         return {"deleted": n}
 
@@ -367,6 +473,8 @@ def create_app(tasks, cert_path=None, info=None):
         task = task_of(body.task)
         await run(task.memory.wipe)
         await run(task.gc_thumbs)
+        if hasattr(task, "forget_everywhere"):
+            await run(task.forget_everywhere, None)
         return {"ok": True}
 
     @app.get("/thumb/{task}/{name}")
@@ -457,7 +565,11 @@ def create_app(tasks, cert_path=None, info=None):
     async def assist_names(body: NamesBody):
         from teachable_eye import assist
         task = task_of(body.task)
-        crops = await run(task.still_crops, body.ids)
+        body.ids = list(dict.fromkeys(body.ids))[:64]      # unique, bounded cost
+        try:
+            crops = await run(lambda: task.still_crops(body.ids, body.still_id))
+        except LookupError as exc:
+            raise HTTPException(409, str(exc)) from None
         known = [g["label"] for g in task.memory.labels()]
         try:
             out = await asyncio.to_thread(

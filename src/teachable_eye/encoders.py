@@ -39,6 +39,39 @@ def model_dir(*parts):
     return path
 
 
+def sha256(path):
+    import hashlib
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for block in iter(lambda: f.read(1 << 20), b""):
+            h.update(block)
+    return h.hexdigest()
+
+
+def download_verified(url, path, digest):
+    """Download `url` to `path` unless present; refuse a file whose SHA-256 is
+    not `digest` (a changed or tampered model never gets loaded)."""
+    import urllib.request
+    from pathlib import Path
+    path = Path(path)
+    if path.exists():
+        return path
+    print(f"downloading {path.name}...")
+    tmp = path.with_suffix(path.suffix + ".part")
+    urllib.request.urlretrieve(url, tmp)
+    check_digest(tmp, digest)
+    tmp.replace(path)
+    return path
+
+
+def check_digest(path, digest):
+    got = sha256(path)
+    if got != digest:
+        path.unlink(missing_ok=True)
+        raise RuntimeError(f"{path.name}: unexpected SHA-256 {got[:12]}..., deleted; "
+                           "the published model changed or the download was tampered with")
+
+
 def fastembed_cache():
     return os.environ.get("FASTEMBED_CACHE_PATH") or str(model_dir("fastembed"))
 

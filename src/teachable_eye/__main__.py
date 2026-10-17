@@ -59,7 +59,7 @@ def main():
     if not args.no_https:
         cert, key = ensure_cert(ip)
     info = {"device": encoders.onnx_providers()[0], "ip": ip}
-    app = create_app(tasks, cert_path=cert, info=info)
+    app = create_app(tasks, cert_path=cert, info=info, hosts=[ip, args.advertise])
     scheme = "http" if args.no_https else "https"
     print(f"ready in {time.perf_counter() - started:.0f}s "
           f"(encoders: {info['device']}, tasks: {', '.join(tasks)})")

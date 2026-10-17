@@ -71,3 +71,10 @@ def test_voice_endpoint(fake, monkeypatch, tmp_path):
     assert res.status_code == 422 and "no speech" in res.json()["error"]
     monkeypatch.setattr(config, "VOICE", False)
     assert client.post("/api/voice", content=wav(1.0)).status_code == 503
+
+
+def test_a_tiny_declared_rate_cannot_blow_up_memory(fake):
+    """4 MB declaring 100 Hz would resample to ~6 GB (security review)."""
+    with pytest.raises(ValueError, match="8-48 kHz"):
+        voice.transcribe(wav(1.0, rate=4000), "en")
+    assert not fake.calls

@@ -20,9 +20,12 @@ BLOCKED_EXT = {
     ".gpx", ".kml", ".igc",
     # vectors, weights, datasets
     ".npy", ".npz", ".pt", ".pth", ".onnx", ".safetensors", ".bin",
-    ".parquet", ".h5", ".snapshot",
+    ".parquet", ".h5", ".snapshot", ".pkl", ".pickle", ".ckpt", ".gguf", ".tflite",
+    ".engine", ".db", ".sqlite", ".jsonl", ".part",
+    # more pictures and audio
+    ".avif", ".jxl", ".weba", ".wma", ".amr",
     # secrets
-    ".pem", ".key",
+    ".pem", ".key", ".p12", ".pfx",
 }
 BLOCKED_DIRS = {"data", "edge-data", "recordings", "captures", "snapshots", "cert"}
 BLOCKED_NAMES = {".env"}

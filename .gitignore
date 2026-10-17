@@ -89,3 +89,22 @@ desktop.ini
 
 # Docs may later need small diagrams: add them explicitly with an
 # exception rule (e.g. !docs/diagrams/*.svg) after review — never photos.
+
+# more models, datasets, media and keys (security review 2026-10-17)
+*.pkl
+*.pickle
+*.ckpt
+*.gguf
+*.tflite
+*.engine
+*.db
+*.sqlite
+*.jsonl
+*.part
+*.avif
+*.jxl
+*.weba
+*.wma
+*.amr
+*.p12
+*.pfx

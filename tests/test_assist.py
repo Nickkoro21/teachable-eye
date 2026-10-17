@@ -127,7 +127,7 @@ def test_server_assist_status_and_errors(tmp_path, monkeypatch):
     class Task:
         memory = mem
 
-        def still_crops(self, ids):
+        def still_crops(self, ids, still_id=None):
             return [gray() for _ in ids]
 
     client = TestClient(create_app({"objects": Task()}))

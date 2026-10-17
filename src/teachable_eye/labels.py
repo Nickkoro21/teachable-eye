@@ -34,7 +34,7 @@ def norm_label(text):
 
 
 def parse_label(transcript):
-    """'This is my mug, Maria made it.' -> 'mug'; «Αυτό είναι το καπέλο μου» -> 'καπέλο'.
+    """'This is my mug, person-a made it.' -> 'mug'; «Αυτό είναι το καπέλο μου» -> 'καπέλο'.
 
     Returns None when the transcript is empty, so silence never becomes a label.
     """

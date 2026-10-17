@@ -30,6 +30,9 @@ from teachable_eye.vote import LabelVote
 THUMB_SIZE = 160
 CROP_SIZE = 384      # kept per taught view, so memory can be re-embedded
 HOLD_SECONDS = 300     # how long a TEACH selection waits for its name
+MAX_HOLDS = 50         # selections waiting for a name at most
+MAX_STILLS = 4         # photos kept open at once (phone, PC, ...)
+MAX_STILL_CROPS = 300  # boxes (detected + drawn) on one photo at most
 EDGE = 0.02            # a box this close to a frame edge "touches" it
 
 BURST_SECONDS = 60.0   # teach-from-video records until the user stops it; safety cap
@@ -299,7 +302,9 @@ class VisualTask:
         self._holds = {}        # hold id -> ([crops], tid or None, time)
         self._still_crops = {}  # photo-mode row id -> crop (last photo only)
         self._bursts = {}       # burst id -> Burst
-        self._still_frame = None  # last photo (for user-drawn regions)
+        self._still_frame = None  # the photo being worked on (for user-drawn regions)
+        self._stills = {}         # still id -> (frame, crops): the last few photos
+        self.last_still_id = None
         self._live_wh = None      # size of the live frames (for follow)
         self._follow = {}         # tid -> follow.FollowTrack (user boxes)
         self._next_follow = 10_000
@@ -368,7 +373,19 @@ class VisualTask:
 
     # -- teaching ----------------------------------------------------------------
 
-    def hold(self, tid, from_still=False):
+    def _use_still(self, still_id):
+        """Work on photo `still_id` (None: the latest). The phone and the PC
+        may each have a photo open: a box of one must never teach the other's
+        crop (backend review 2026-10-17)."""
+        if still_id is None:
+            still_id = self.last_still_id       # the newest photo
+            if still_id is None or still_id not in self._stills:
+                return
+        if still_id not in self._stills:
+            raise LookupError("this photo has expired; take it again")
+        self._still_frame, self._still_crops = self._stills[still_id]
+
+    def hold(self, tid, from_still=False, still_id=None):
         """Freeze what will be taught, at the moment TEACH is pressed.
 
         The user may move the phone while typing the name and the tracker
@@ -376,6 +393,7 @@ class VisualTask:
         """
         with self._lock:
             if from_still:
+                self._use_still(still_id)
                 crop = self._still_crops.get(tid)
             else:
                 track = self._track(tid)
@@ -393,14 +411,20 @@ class VisualTask:
                 raise LookupError("that object is no longer in view")
             bid = uuid.uuid4().hex
             seconds = min(max(1.0, float(seconds)), BURST_MAX_SECONDS)
+            # forgotten recordings (the phone went away) must not pile up
+            now = time.time()
+            self._bursts = {k: b for k, b in self._bursts.items() if now < b.until + 60}
+            if len(self._bursts) >= 2:
+                self._bursts.pop(next(iter(self._bursts)))
             self._bursts[bid] = Burst(tid, seconds)
             return bid
 
     def burst_status(self, bid):
-        b = self._bursts.get(bid)
-        if b is None:
-            raise LookupError("no such video teach")
-        return b.status()
+        with self._lock:                 # the worker may be thinning its lists
+            b = self._bursts.get(bid)
+            if b is None:
+                raise LookupError("no such video teach")
+            return b.status()
 
     def finish_burst(self, bid):
         """Stop collecting; turn the distinct views into a hold."""
@@ -418,6 +442,8 @@ class VisualTask:
         now = time.time()
         self._holds = {k: v for k, v in self._holds.items()
                        if now - v[2] < HOLD_SECONDS}
+        while len(self._holds) >= MAX_HOLDS:          # oldest first
+            self._holds.pop(min(self._holds, key=lambda k: self._holds[k][2]))
         hid = uuid.uuid4().hex
         self._holds[hid] = ([c.copy() for c in crops], tid, now)
         return hid
@@ -456,8 +482,10 @@ class VisualTask:
                                            "source": self.source, "parent": pid,
                                            "aug": fn.__name__})
                 self.memory.teach_many(points)       # one write, one flush
-            except ValueError:
-                self._holds[hid] = held          # let the user fix the name
+            except Exception:
+                # a bad name, or a GPU / disk error: the selection (maybe a
+                # long video teach) stays, so Save can simply be pressed again
+                self._holds[hid] = held
                 raise
             if tid is not None:                  # show the label at once
                 self._votes.pop(tid, None)
@@ -473,9 +501,10 @@ class VisualTask:
         """Hold and teach in one step (used by tests and tools)."""
         return self.teach_held(self.hold(tid), label)
 
-    def still_crops(self, rids):
-        """Crops of rows of the last photo (None where a row is unknown)."""
+    def still_crops(self, rids, still_id=None):
+        """Crops of rows of a photo (None where a row is unknown)."""
         with self._lock:
+            self._use_still(still_id)
             return [self._still_crops.get(r) for r in rids]
 
     def example_images(self, label, n=2):
@@ -492,6 +521,24 @@ class VisualTask:
             if len(out) >= n:
                 break
         return out
+
+    def forget_everywhere(self, label):
+        """After forgetting `label` (None: everything): delete its test views
+        and the evaluation reports of this task that name it."""
+        removed = 0
+        for it in self.evalset.items():
+            if label is None or it["label"] == label:
+                removed += self.evalset.delete(it["id"])
+        folder = config.DATA_DIR / "reports"
+        for path in folder.glob(f"eval-{self.name}-*"):
+            try:
+                text = path.read_text(encoding="utf-8")
+            except OSError:
+                continue
+            if label is None or label in text:
+                path.unlink(missing_ok=True)
+                removed += 1
+        return removed
 
     def held_crops(self, hid):
         """The crops of a hold, left in place (Claude's opinion reads them)."""
@@ -563,7 +610,7 @@ class VisualTask:
         with self._lock:
             views = self._view_images()
             points = self._variant_points(views, with_thumbs=True)
-            removed = self.memory.forget_variants()
+            removed = self.memory.forget_variants({vid for vid, _, _ in views})
             self.memory.teach_many(points)
         self.gc_thumbs()
         return {"views": len(views), "removed": removed, "added": len(points),
@@ -614,18 +661,21 @@ class VisualTask:
 
     supports_regions = False   # user-drawn boxes (see region)
 
-    def region(self, box):
+    def region(self, box, still_id=None):
         """Photo mode: the user marked `box` (normalised) where the detector
         found nothing. Recognize it and keep its crop so it can be taught."""
         if not self.supports_regions:
             raise LookupError("custom boxes are not available for this mode")
         with self._lock:
+            self._use_still(still_id)
             if self._still_frame is None:
                 raise LookupError("take a photo first")
             from teachable_eye.detect import box_crop
             crop = box_crop(self._still_frame, box)
             if crop.size == 0:
                 raise LookupError("that box is empty")
+            if len(self._still_crops) >= MAX_STILL_CROPS:
+                raise LookupError("too many boxes on this photo; take a new one")
             rid = 1000 + len(self._still_crops)
             self._still_crops[rid] = crop
             vec = self.embed([crop])[0]
@@ -633,8 +683,8 @@ class VisualTask:
                          "focus": False, "background": False, "manual": True},
                         **self.memory.recognize(vec).to_json())
 
-    def follow(self, box):
-        """Resume live view following `box` (normalised) from the last photo.
+    def follow(self, box, still_id=None):
+        """Resume live view following `box` (normalised) from a photo.
 
         The photo is scaled to the live frame size first, so the tracker
         starts in the same pixel space it will be updated in.
@@ -642,6 +692,7 @@ class VisualTask:
         if not self.supports_regions:
             raise LookupError("following a box is not available for this mode")
         with self._lock:
+            self._use_still(still_id)
             if self._still_frame is None:
                 raise LookupError("take a photo first")
             from teachable_eye.follow import FollowTrack, scaled
@@ -662,6 +713,11 @@ class VisualTask:
             self._still_frame = frame
             found = self.detector.detect_once(frame)
             self._still_crops = {i: crop for i, (_, crop) in enumerate(found)}
+            sid = uuid.uuid4().hex
+            self._stills[sid] = (self._still_frame, self._still_crops)
+            while len(self._stills) > MAX_STILLS:
+                self._stills.pop(next(iter(self._stills)))
+            self.last_still_id = sid
             if not found:
                 return []
             vectors = self.embed([crop for _, crop in found])
@@ -694,8 +750,8 @@ class VisualTask:
         for other in self.sibling_memory_dirs():
             try:
                 mem = TaskMemory(other, 1, self.name, self.memory.thresholds)
-            except SystemExit:
-                return 0                          # in use elsewhere: keep all
+            except (SystemExit, Exception):
+                return 0      # cannot see what it uses: keep every file (safe side)
             try:
                 in_use |= mem.thumbs_in_use()
             finally:
@@ -783,15 +839,18 @@ class PeopleTask(VisualTask):
     # from their landmarks, so a plain crop of the box would not do.
     supports_regions = True
 
-    def region(self, box):
+    def region(self, box, still_id=None):
         from teachable_eye.faces import find_face
         with self._lock:
+            self._use_still(still_id)
             if self._still_frame is None:
                 raise LookupError("take a photo first")
             found = find_face(self._still_frame, box)
             if found is None:
                 raise LookupError("no face found in that box")
             face_box, aligned = found
+            if len(self._still_crops) >= MAX_STILL_CROPS:
+                raise LookupError("too many boxes on this photo; take a new one")
             rid = 1000 + len(self._still_crops)
             self._still_crops[rid] = aligned
             vec = self.embed([aligned])[0]
@@ -799,5 +858,5 @@ class PeopleTask(VisualTask):
                          "background": False, "manual": True},
                         **self.memory.recognize(vec).to_json())
 
-    def follow(self, box):
+    def follow(self, box, still_id=None):
         raise LookupError("faces are followed by the face detector itself")

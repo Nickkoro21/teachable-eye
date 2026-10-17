@@ -1,6 +1,6 @@
 // App-shell cache so the PWA installs and opens fast. The API and the camera
 // socket always go to the network: results must be live, never cached.
-const CACHE = "teye-shell-v18";
+const CACHE = "teye-shell-v19";
 const SHELL = ["/", "/static/style.css", "/static/app.js", "/static/icon.svg", "/manifest.webmanifest"];
 
 self.addEventListener("install", (e) => {
@@ -23,8 +23,16 @@ self.addEventListener("fetch", (e) => {
   // offline, any cached version will do, so the page still works and can say
   // that the PC is not reachable (it once showed up unstyled and dead).
   e.respondWith(fetch(e.request, { cache: "no-cache" }).then((res) => {
-    const copy = res.clone();
-    caches.open(CACHE).then((c) => c.put(e.request, copy));
+    if (res.ok) {                    // never keep an error page (e.g. during a restart)
+      const copy = res.clone();
+      caches.open(CACHE).then(async (c) => {
+        // one version per file: drop the older ?v= copies of the same path
+        for (const old of await c.keys(e.request, { ignoreSearch: true })) {
+          if (old.url !== e.request.url) await c.delete(old);
+        }
+        await c.put(e.request, copy);
+      });
+    }
     return res;
   }).catch(() => caches.match(e.request, { ignoreSearch: true })));
 });

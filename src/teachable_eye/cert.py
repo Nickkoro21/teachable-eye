@@ -58,8 +58,15 @@ def ensure_cert(ip, root=None):
         .serial_number(x509.random_serial_number())
         .not_valid_before(now - timedelta(minutes=1))
         .not_valid_after(now + timedelta(days=397))
-        .add_extension(x509.BasicConstraints(ca=True, path_length=None),
+        # a phone installs it as a CA, so it may sign nothing else: no
+        # sub-CAs, and only this server's own names (security review 2026-10-17)
+        .add_extension(x509.BasicConstraints(ca=True, path_length=0),
                        critical=True)
+        .add_extension(x509.NameConstraints(permitted_subtrees=[
+            x509.IPAddress(ipaddress.ip_network(f"{ip}/32")),
+            x509.IPAddress(ipaddress.ip_network("127.0.0.1/32")),
+            x509.DNSName("localhost"), x509.DNSName(hostname)],
+            excluded_subtrees=None), critical=True)
         .add_extension(san, critical=False)
         .sign(private_key, hashes.SHA256())
     )
