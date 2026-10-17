@@ -131,3 +131,18 @@ def test_teach_many_is_one_write_with_variants(mem):
     assert mem.forget_example(ids[0]) == 1 and mem.count() == 1
     with pytest.raises(ValueError):
         mem.teach_many([{"vector": axis(0), "label": "  "}])
+
+
+def test_recognize_lists_the_runner_up_labels(mem):
+    """Tapping a label shows what else it could be, best score per label."""
+    mem.teach(axis(0), "koro")
+    mem.teach(toward(axis(0), axis(1), 0.97), "koro")
+    mem.teach(toward(axis(0), axis(2), 0.80), "georgia")
+    mem.teach(axis(3), "roumi")
+    d = mem.recognize(toward(axis(0), axis(4), 0.95))
+    labels = [c[0] for c in d.candidates]
+    assert labels[:2] == ["koro", "georgia"]           # best first, one per label
+    assert len(labels) == len(set(labels))
+    assert d.candidates[0][1] >= d.candidates[1][1]
+    out = d.to_json()["candidates"]
+    assert out[0]["label"] == "koro" and "score" in out[0]

@@ -28,6 +28,9 @@ class Decision:
     guess: str | None             # nearest label when uncertain (display only)
     score: float                  # best similarity, 0.0 when memory is empty
     neighbours: list[Neighbour] = field(default_factory=list)
+    # best score of each nearby LABEL, best first: what else it could be and
+    # by how much, so the user sees what to teach to tell two things apart
+    candidates: list[tuple[str, float]] = field(default_factory=list)
 
     def to_json(self):
         return {
@@ -39,6 +42,8 @@ class Decision:
                 {"id": n.id, "label": n.label, "score": round(n.score, 4),
                  "thumb": n.thumb, "aug": n.aug} for n in self.neighbours
             ],
+            "candidates": [{"label": lb, "score": round(sc, 4)}
+                           for lb, sc in self.candidates],
         }
 
 

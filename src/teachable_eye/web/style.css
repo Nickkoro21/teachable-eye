@@ -255,3 +255,17 @@ body.mirror #video, body.mirror #frozen { transform: scaleX(-1); }
 .vrow { display: flex; gap: 10px; align-items: center; justify-content: center; }
 .vrow .big { min-width: 160px; height: 52px; }
 .vrow .muted { flex: 1; }
+
+/* what else it could be: tap the active box's label */
+.cands { position: fixed; left: 12px; right: 12px; z-index: 6; margin: 0 auto; max-width: 420px;
+  top: calc(env(safe-area-inset-top) + 62px); background: #0b1220e8; border: 1px solid #ffffff33;
+  border-radius: 14px; padding: 8px 12px; font-size: 14px; }
+.cands .ch { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 4px; }
+.cands .ch small, .cands > small { color: var(--muted); }
+.crow { display: grid; grid-template-columns: minmax(0, 1.3fr) 1fr auto; gap: 8px; align-items: center;
+  padding: 3px 0; }
+.crow span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.crow .bar { height: 6px; border-radius: 3px; background: #ffffff1a; overflow: hidden; }
+.crow .bar i { display: block; height: 100%; background: var(--uncertain); }
+.crow.top .bar i { background: var(--known); }
+.crow small { color: var(--muted); }

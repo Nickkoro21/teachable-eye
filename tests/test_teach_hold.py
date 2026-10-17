@@ -248,3 +248,39 @@ def test_people_box_drawn_on_a_photo_snaps_to_a_face(tmp_path, monkeypatch):
     with pytest.raises(LookupError):
         task.follow([0.1, 0.1, 0.5, 0.5])
     mem.close()
+
+
+def test_burst_records_the_whole_time_and_keeps_the_most_different_views():
+    """A turning face gives many distinct views: the burst must not stop at
+    the first ten, and the kept views must span the whole turn."""
+    from teachable_eye.tasks import BURST_KEEP, Burst
+    crop = np.full((20, 20, 3), 128, np.uint8)
+    b = Burst(7, seconds=30)
+    for i in range(40):                      # a head turning 180 degrees
+        a = np.pi * i / 39
+        b.offer(crop, [np.cos(a), np.sin(a), 0.0, 0.0])
+    assert not b.done                        # no early stop any more
+    kept = b.select()
+    frames = b.status()["frames"]            # near-copies of the last frame are skipped
+    assert 15 <= frames <= 40
+    assert len(kept) >= 8
+    assert kept[0] == 0 and kept[-1] == frames - 1   # both ends of the turn are kept
+    rng = np.random.default_rng(0)           # many very different views:
+    b = Burst(7, seconds=30)                 # the cap is BURST_KEEP, not 10
+    for _ in range(40):
+        b.offer(crop, rng.normal(size=64))
+    assert len(b.select()) == BURST_KEEP
+
+
+def test_long_burst_is_thinned_evenly_not_cut(monkeypatch):
+    """A long recording keeps covering its whole length when the pool fills."""
+    from teachable_eye import tasks
+    monkeypatch.setattr(tasks, "BURST_POOL", 20)
+    b = tasks.Burst(7, seconds=30)
+    rng = np.random.default_rng(1)
+    big = np.full((800, 600, 3), 90, np.uint8)
+    for _ in range(100):
+        b.offer(big, rng.normal(size=32))
+    assert len(b.crops) <= 20
+    assert max(b.crops[0].shape[:2]) <= tasks.CROP_SIZE    # stored small
+    assert b.offered == 100

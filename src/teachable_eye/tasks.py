@@ -32,9 +32,12 @@ CROP_SIZE = 384      # kept per taught view, so memory can be re-embedded
 HOLD_SECONDS = 300     # how long a TEACH selection waits for its name
 EDGE = 0.02            # a box this close to a frame edge "touches" it
 
-BURST_SECONDS = 5.0    # teach-from-video: how long views are collected
-BURST_MAX_VIEWS = 10
-BURST_DISTINCT = 0.95  # keep a view only if cosine < this to every kept view
+BURST_SECONDS = 60.0   # teach-from-video records until the user stops it; safety cap
+BURST_MAX_SECONDS = 120.0
+BURST_KEEP = 15        # views kept: the most different ones of the whole recording
+BURST_DISTINCT = 0.95  # a kept view differs from every other (cosine < this)
+BURST_SAME = 0.995     # a frame this close to the previous one is skipped (holding still)
+BURST_POOL = 200       # candidate frames held at most (thinned evenly when full)
 
 
 def is_background(box):
@@ -103,33 +106,65 @@ def _unit(v):
 
 
 class Burst:
-    """Teach from video: collect distinct views of one track for a few seconds.
+    """Teach from video: record one track for the whole time, keep the best views.
 
-    Every processed frame offers the track's newest crop; a view is kept only
-    when it differs enough from those already kept, so standing still adds
-    nothing and walking around the object adds its other sides.
+    Every processed frame offers the track's newest crop. All of them are
+    candidates (except near-copies of the previous frame); at the end the
+    most different views of the WHOLE recording are chosen (farthest-point
+    sampling, sharpest view first), so turning around a face or an object
+    covers all its sides. It used to keep the first 10 distinct views and
+    stop: a turning face reached 10 in about a second and the later angles
+    were lost (author's phone test, 2026-10-17).
     """
 
-    def __init__(self, tid, seconds=BURST_SECONDS, max_views=BURST_MAX_VIEWS):
+    def __init__(self, tid, seconds=BURST_SECONDS, keep=BURST_KEEP):
         self.tid = tid
         self.until = time.time() + seconds
-        self.max_views = max_views
-        self.crops, self.vectors = [], []
+        self.keep = keep
+        self.crops, self.vectors, self.sharp = [], [], []
         self.offered = 0
 
     @property
     def done(self):
-        return time.time() >= self.until or len(self.crops) >= self.max_views
+        return time.time() >= self.until
 
     def offer(self, crop, vector):
         self.offered += 1
         v = _unit(vector)
-        if all(float(v @ k) < BURST_DISTINCT for k in self.vectors):
-            self.crops.append(crop.copy())
-            self.vectors.append(v)
+        if self.vectors and float(v @ self.vectors[-1]) >= BURST_SAME:
+            return                                  # nothing changed
+        if len(self.crops) >= BURST_POOL:
+            # a long recording: thin out evenly, so the whole of it stays covered
+            self.crops, self.vectors, self.sharp = (
+                self.crops[::2], self.vectors[::2], self.sharp[::2])
+        h, w = crop.shape[:2]
+        if max(h, w) > CROP_SIZE:                   # bounded memory per candidate
+            s = CROP_SIZE / max(h, w)
+            crop = cv2.resize(crop, (max(1, int(w * s)), max(1, int(h * s))),
+                              interpolation=cv2.INTER_AREA)
+        gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY) if crop.ndim == 3 else crop
+        self.crops.append(crop.copy())
+        self.vectors.append(v)
+        self.sharp.append(float(cv2.Laplacian(gray, cv2.CV_64F).var()))
+
+    def select(self):
+        """Indices (in time order) of up to `keep` views that differ most."""
+        if not self.vectors:
+            return []
+        V = np.stack(self.vectors)
+        chosen = [int(np.argmax(self.sharp))]       # start from the sharpest
+        closest = V @ V[chosen[0]]                  # similarity to the chosen set
+        while len(chosen) < self.keep:
+            nxt = int(np.argmin(closest))           # the least like any chosen
+            if closest[nxt] >= BURST_DISTINCT:
+                break                               # the rest add nothing new
+            chosen.append(nxt)
+            closest = np.maximum(closest, V @ V[nxt])
+        return sorted(chosen)
 
     def status(self):
-        return {"views": len(self.crops), "offered": self.offered,
+        return {"views": len(self.select()), "frames": len(self.crops),
+                "offered": self.offered,
                 "left": max(0.0, round(self.until - time.time(), 1)),
                 "done": self.done}
 
@@ -249,6 +284,7 @@ class VisualTask:
             if self._track(tid) is None:
                 raise LookupError("that object is no longer in view")
             bid = uuid.uuid4().hex
+            seconds = min(max(1.0, float(seconds)), BURST_MAX_SECONDS)
             self._bursts[bid] = Burst(tid, seconds)
             return bid
 
@@ -264,7 +300,8 @@ class VisualTask:
             b = self._bursts.pop(bid, None)
             if b is None:
                 raise LookupError("no such video teach")
-            crops = b.crops or ([self._crops[b.tid]] if b.tid in self._crops else [])
+            crops = ([b.crops[i] for i in b.select()]
+                     or ([self._crops[b.tid]] if b.tid in self._crops else []))
             if not crops:
                 raise LookupError("no views captured; keep the object in view")
             return self._new_hold(crops, b.tid), len(crops)

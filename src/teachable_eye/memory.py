@@ -37,6 +37,9 @@ from teachable_eye.policy import Neighbour, decide
 
 VECTOR = "v"
 SCAN_LIMIT = 100_000   # full scans are fine at personal scale
+# points looked at per recognition: enough to find the best score of the
+# nearby labels too, although every view also has its variants
+CANDIDATE_POOL = 200
 TAUGHT = "taught"
 
 
@@ -151,32 +154,35 @@ class TaskMemory:
 
     # -- reads -----------------------------------------------------------------
 
-    def recognize(self, vector, k=3):
+    def recognize(self, vector, k=3, labels=5):
         """Nearest taught examples -> Decision (see policy.decide).
 
         An augmented variant counts as its original view: the evidence shows
         each taught view once, with the best score among it and its variants.
+        The decision also lists the best score of up to `labels` nearby labels
+        (the runner-ups), so the app can show what else it could be.
         """
         with self._lock:
             hits = self.shard.query(QueryRequest(
                 query=Query.Nearest(list(map(float, vector)), using=VECTOR),
                 filter=Filter(must=[FieldCondition(
                     key="kind", match=MatchValue(value=TAUGHT))]),
-                limit=k * 6,
+                limit=CANDIDATE_POOL,
                 with_payload=True,
             ))
-        neighbours, seen = [], set()
+        neighbours, seen, best = [], set(), {}
         for h in hits:                      # best-first
+            label = h.payload.get("label", "")
+            best.setdefault(label, float(h.score))
             root = h.payload.get("parent") or str(h.id)
-            if root in seen:
+            if root in seen or len(neighbours) == k:
                 continue
             seen.add(root)
-            neighbours.append(Neighbour(root, h.payload.get("label", ""),
-                                        float(h.score), h.payload.get("thumb"),
-                                        h.payload.get("aug")))
-            if len(neighbours) == k:
-                break
-        return decide(neighbours, self.thresholds)
+            neighbours.append(Neighbour(root, label, float(h.score),
+                                        h.payload.get("thumb"), h.payload.get("aug")))
+        decision = decide(neighbours, self.thresholds)
+        decision.candidates = list(best.items())[:labels]
+        return decision
 
     def count(self):
         with self._lock:

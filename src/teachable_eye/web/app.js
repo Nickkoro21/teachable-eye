@@ -56,7 +56,11 @@ const I18N = {
     nothingSelected: "Choose a box first.", consentNeeded: "Please confirm consent first.",
     nearest: "nearest examples", existing: "Add a view to an existing label",
     orNew: "…or type a new name", newLabel: "new", peopleOff: "People mode is not loaded on the PC.",
-    recording: "Recording views…", recMove: "Move slowly around it.", stop: "Stop",
+    recording: "Recording views…", recMove: "Move slowly around it; Stop when you are done.", stop: "Stop",
+    candTitle: "What else it could be", candBands: "known ≥ {0} · maybe ≥ {1}",
+    candClose: "“{0}” is close (−{1}): teach more views of both, where they look alike.",
+    candClear: "Clear lead over “{0}” (−{1}).", candOne: "No other label nearby.",
+    candTap: "Tap the label to open or close this.",
     recViews: "{0} views", noViews: "No views captured — keep it in view and try again.",
     assistTitle: "✨ Claude help (cloud, optional)",
     assistNote: "Name suggestions, a second opinion, report summaries. Objects only; pictures with a face never leave the PC.",
@@ -128,7 +132,11 @@ const I18N = {
     nothingSelected: "Διάλεξε πρώτα ένα πλαίσιο.", consentNeeded: "Επιβεβαίωσε πρώτα τη συναίνεση.",
     nearest: "πιο κοντινά παραδείγματα", existing: "Πρόσθεσε όψη σε υπάρχουσα ετικέτα",
     orNew: "…ή γράψε νέο όνομα", newLabel: "νέο", peopleOff: "Τα πρόσωπα δεν έχουν φορτωθεί στο PC.",
-    recording: "Καταγραφή όψεων…", recMove: "Κινήσου αργά γύρω του.", stop: "Τέλος",
+    recording: "Καταγραφή όψεων…", recMove: "Κινήσου αργά γύρω του· Τέλος όταν τελειώσεις.", stop: "Τέλος",
+    candTitle: "Τι άλλο θα μπορούσε να είναι", candBands: "γνωστό ≥ {0} · ίσως ≥ {1}",
+    candClose: "Το «{0}» είναι κοντά (−{1}): δίδαξε κι άλλες όψεις και στα δύο, εκεί που μοιάζουν.",
+    candClear: "Καθαρό προβάδισμα από το «{0}» (−{1}).", candOne: "Καμία άλλη ετικέτα κοντά.",
+    candTap: "Πάτα την ετικέτα για άνοιγμα ή κλείσιμο.",
     recViews: "{0} όψεις", noViews: "Δεν καταγράφηκαν όψεις — κράτα το στο κάδρο και ξαναδοκίμασε.",
     assistTitle: "✨ Βοήθεια από το Claude (cloud, προαιρετική)",
     assistNote: "Προτάσεις ονομάτων, δεύτερη γνώμη, σύνοψη αναφορών. Μόνο αντικείμενα· εικόνες με πρόσωπο δεν φεύγουν ποτέ από το PC.",
@@ -154,7 +162,7 @@ const I18N = {
 const MAX_SIDE = 960;          // live frames sent to the PC
 const STILL_SIDE = 1920;       // photo mode
 const MIN_INTERVAL_MS = 150;   // ~6 fps ceiling
-const VIDEO_SECONDS = 5;
+const VIDEO_MAX_SECONDS = 60;   // video teach runs until Stop; this is only a safety cap
 // teach-time augmentation variants (see tasks.AUGMENT on the server)
 const AUG_ICON = { zoom_center: "🔍", flip: "⇋", darker: "◐" };
 function augName(aug) { return aug ? t(`aug_${aug}`) : ""; }
@@ -250,6 +258,7 @@ async function checkServer() {
     const res = await fetch("/api/status", { cache: "no-store" });
     const st = await res.json();
     state.tasks = Object.keys(st.tasks || { objects: 1 });
+    state.bands = st.tasks || {};
     $("landStatus").textContent = t("serverOk", state.tasks.map((k) => t(k)).join(", "));
     up = true;
   } catch {
@@ -485,6 +494,7 @@ function chip(text, x, y, color, topLimit, cw) {
   ctx.fillStyle = "#0b1220";
   ctx.fillText(text, tx + 7, ty + 5);
   ctx.restore();
+  return { x: tx, y: ty, w: tw, h: 26 };
 }
 
 function corners(x, y, w, h, color) {
@@ -505,6 +515,7 @@ function draw() {
   }
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, cw, ch);
+  state.chipHit = null;
   if (!state.running) return;
   if (state.drag && state.drag.moved) {
     const d = state.drag;
@@ -580,7 +591,12 @@ function draw() {
       ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.setLineDash([8, 6]);
       ctx.strokeRect(x, y, w, h); ctx.setLineDash([]);
     }
-    chip(`${target.manual ? "✎" : active ? "◎" : "○"} ${caption(target)}`, x, y, color, topLimit, cw);
+    const open = active && (target.candidates || []).length ? " ▾" : "";
+    const rect = chip(`${target.manual ? "✎" : active ? "◎" : "○"} ${caption(target)}${open}`,
+                      x, y, color, topLimit, cw);
+    state.chipHit = active && !rec ? { id: target.id, ...rect } : null;
+  } else {
+    state.chipHit = null;
   }
 }
 
@@ -657,7 +673,38 @@ function currentTarget() {
   return rows.find((r) => r.id === state.selected) || rows.find((r) => r.focus) || null;
 }
 
+// Tap the active box's label: the best score of each nearby label, so the
+// user sees what else it could be and how close (author's request).
+function renderCands() {
+  const el = $("cands");
+  const r = state.showCands != null ? source().rows.find((q) => q.id === state.showCands) : null;
+  const list = (r && r.candidates) || [];
+  if (!r || !list.length || state.burst) {
+    el.hidden = true;
+    if (!r) state.showCands = null;
+    return;
+  }
+  const b = (state.bands || {})[state.task] || {};
+  const top = list[0].score;
+  const rows = list.map((c, i) => `<div class="crow${i ? "" : " top"}">
+      <span>${i + 1}. ${escapeHtml(c.label)}</span>
+      <span class="bar"><i style="width:${Math.round(Math.max(0.04, Math.min(1, c.score)) * 100)}%"></i></span>
+      <span>${c.score.toFixed(2)}${i ? ` <small>−${(top - c.score).toFixed(2)}</small>` : ""}</span></div>`).join("");
+  let advice = t("candOne");
+  if (list.length > 1) {
+    const gap = top - list[1].score;
+    const close = gap < Math.max(0.03, (b.margin || 0.06) / 2);
+    advice = t(close ? "candClose" : "candClear", escapeHtml(list[1].label), gap.toFixed(2));
+  }
+  const bands = b.threshold != null
+    ? t("candBands", b.threshold.toFixed(2), (b.threshold - b.margin).toFixed(2)) : "";
+  el.innerHTML = `<div class="ch"><b>${t("candTitle")}</b><small>${bands}</small></div>${rows}
+    <small>${advice} ${t("candTap")}</small>`;
+  el.hidden = false;
+}
+
 function renderCard() {
+  renderCands();
   const card = $("card");
   const r = source().rows.find((q) => q.id === state.selected) || null;
   // No evidence card on the live view: it covered the picture and the box's
@@ -747,7 +794,7 @@ async function teachSelected() {
 // Teach from video: collect distinct views of the chosen object for a few
 // seconds while the user moves around it, then name them all at once.
 async function startBurst() {
-  if (state.burst) return;
+  if (state.burst) { stopBurst(true); return; }       // pressed again: stop
   if (state.counting) return;
   if (state.still) backToLive();
   const chosen = activeTarget();
@@ -758,16 +805,16 @@ async function startBurst() {
   if (!r) { toast(t("nothingSelected")); return; }
   let res;
   try {
-    res = await api("/api/burst", { task: state.task, id: r.id, seconds: VIDEO_SECONDS });
+    res = await api("/api/burst", { task: state.task, id: r.id, seconds: VIDEO_MAX_SECONDS });
   } catch (err) { toast(err.message, 4000); return; }
   state.burst = { id: res.burst, tid: r.id, target: r };
-  $("rec").hidden = false; $("recLeft").textContent = VIDEO_SECONDS; $("recViews").textContent = "";
+  $("rec").hidden = false; $("recLeft").textContent = "0"; $("recViews").textContent = "";
   updateHint(); renderCard();
   state.burst.timer = setInterval(async () => {
     if (!state.burst) return;
     try {
       const st = await api(`/api/burst/${state.burst.id}?task=${state.task}`, null, "GET");
-      $("recLeft").textContent = Math.ceil(st.left);
+      $("recLeft").textContent = Math.floor(VIDEO_MAX_SECONDS - st.left);   // seconds so far
       $("recViews").textContent = t("recViews", st.views);
       if (st.done) stopBurst(true);
     } catch { stopBurst(false); }
@@ -1721,6 +1768,13 @@ overlay.addEventListener("pointerup", (ev) => {
                 Math.max(a[0], b[0]), Math.max(a[1], b[1])], d.edit);
     return;
   }
+  const ch = state.chipHit;
+  if (ch && d.x0 >= ch.x - 8 && d.x0 <= ch.x + ch.w + 8 && d.y0 >= ch.y - 10 && d.y0 <= ch.y + ch.h + 10) {
+    state.showCands = state.showCands === ch.id ? null : ch.id;
+    renderCands();
+    return;
+  }
+  if (state.showCands != null) { state.showCands = null; renderCands(); }
   const r = hitTest(d.x0, d.y0);
   if (r) {
     state.selected = r.id;

@@ -60,7 +60,7 @@ class RegionBody(BaseModel):
 class BurstBody(BaseModel):
     task: str
     id: int
-    seconds: float = 5.0
+    seconds: float = 60.0   # runs until the user stops it; capped on the server
 
 
 class TeachBody(BaseModel):
@@ -208,12 +208,16 @@ def create_app(tasks, cert_path=None, info=None):
                     await socket.send_json({"error": str(exc)})
                     continue
                 rows = await run(current.process, frame)
+                if state["active"] is not socket:
+                    break              # replaced while this frame was processed
                 await socket.send_json({
                     "task": task, "rows": rows,
                     "w": int(frame.shape[1]), "h": int(frame.shape[0]),
                     "ms": round((time.perf_counter() - started) * 1000, 1),
                 })
-        except WebSocketDisconnect:
+        except (WebSocketDisconnect, RuntimeError):
+            # the phone went away, or this socket was closed by a newer one
+            # (starlette raises a RuntimeError subclass on send-after-close)
             pass
         finally:
             if state["active"] is socket:
