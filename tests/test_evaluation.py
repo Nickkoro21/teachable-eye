@@ -131,6 +131,8 @@ def test_a13_server_eval_flow(task, tmp_path):
     assert client.get(f"/api/eval/objects/{iid}.jpg").status_code == 200
     run = client.post("/api/eval/run", json={"task": "objects"}).json()
     assert run["current"]["correct"] == 1 and run["current"]["dangerous"] == 0
+    assert set(run["profiles"]) == {"none", "basic", "strong"}      # compared on the same set
+    assert run["profiles"]["strong"]["points"] > run["profiles"]["basic"]["points"]
     md = client.get(f"/api/reports/{run['report']}.md")
     assert md.status_code == 200 and "Evaluation" in md.text
     saved = json.loads((tmp_path / "reports" / f"{run['report']}.json").read_text("utf-8"))

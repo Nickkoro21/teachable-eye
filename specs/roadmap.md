@@ -97,6 +97,10 @@ object crops and skipped a third crop in which YuNet found a face (~800 tokens i
    detection/tracking spike on the first phone clips).
 
 ## Backlog / ideas (research before scheduling)
+- **Face liveness (live person vs photo/screen)** — research done (research/05-face-liveness.md):
+  MiniFASNet ONNX (Apache-2.0) plus a nose-parallax test from YuNet's 5 points; a spike with
+  recorded live / print / screen / replay clips and APCER/BPCER before any UI; advice only, never a
+  security decision.
 - **Parts and their state (inspection points)** — e.g. the clip of a hatch, a switch in the wrong
   position, a button. Test 2026-10-16 on a phone photo of a handset: the prompt-free detector found
   0 parts at live resolution, 2 at 1280 px, and on a zoomed crop the logo, a label and the ring but

@@ -93,10 +93,118 @@ def darker(crop, gain=0.7):
     return cv2.convertScaleAbs(crop, alpha=gain, beta=0)
 
 
-AUGMENT = {
-    "objects": (zoom_center, flip, darker),
-    "people": (flip, darker),     # faces are aligned: never crop them
+# -- the "strong" profile (2026-10-17, author's request: partial views and
+# rotations, to make recognition more robust). Pieces keep about half of the
+# object, not a quarter: a quarter of a mug looks like many things, and a
+# confident wrong name is the error that matters most. Decided by the
+# evaluation's basic-vs-strong comparison once there is a test set.
+
+def brighter(crop, gain=1.3, bias=12):
+    """Stronger light, e.g. near a window."""
+    return cv2.convertScaleAbs(crop, alpha=gain, beta=bias)
+
+
+def _rotate(crop, degrees):
+    h, w = crop.shape[:2]
+    m = cv2.getRotationMatrix2D((w / 2, h / 2), degrees, 1.0)
+    return cv2.warpAffine(crop, m, (w, h), borderMode=cv2.BORDER_REPLICATE)
+
+
+def rot_left(crop):
+    """Turned 15° (the phone or the object held at an angle)."""
+    return _rotate(crop, 15)
+
+
+def rot_right(crop):
+    return _rotate(crop, -15)
+
+
+def tilt_left(crop):
+    """A face tilted 8° (more would fight the eye alignment)."""
+    return _rotate(crop, 8)
+
+
+def tilt_right(crop):
+    return _rotate(crop, -8)
+
+
+def _corner(crop, corner, keep=0.75):
+    """Keep 75 % of each side (~56 % of the area) from one corner."""
+    h, w = crop.shape[:2]
+    if h <= 20 or w <= 20:
+        return crop
+    kh, kw = int(h * keep), int(w * keep)
+    y = 0 if corner[0] == "t" else h - kh
+    x = 0 if corner[1] == "l" else w - kw
+    return crop[y:y + kh, x:x + kw].copy()
+
+
+def part_tl(crop):
+    """Part of the object only: the rest out of frame or hidden."""
+    return _corner(crop, "tl")
+
+
+def part_tr(crop):
+    return _corner(crop, "tr")
+
+
+def part_bl(crop):
+    return _corner(crop, "bl")
+
+
+def part_br(crop):
+    return _corner(crop, "br")
+
+
+def _cover(crop, y0, y1, x0, x1):
+    out = crop.copy()
+    h, w = out.shape[:2]
+    out[int(h * y0):int(h * y1), int(w * x0):int(w * x1)] = 127
+    return out
+
+
+def cover_tl(crop):
+    """A quarter hidden (a hand, another object in front)."""
+    return _cover(crop, 0, 0.5, 0, 0.5)
+
+
+def cover_br(crop):
+    return _cover(crop, 0.5, 1, 0.5, 1)
+
+
+def cover_low(crop):
+    """Lower third of a face hidden (a hand on the chin, a scarf)."""
+    return _cover(crop, 0.68, 1, 0, 1)
+
+
+def blur(crop):
+    """Slightly out of focus or moving."""
+    return cv2.GaussianBlur(crop, (5, 5), 0)
+
+
+AUGMENT_PROFILES = {
+    "basic": {
+        "objects": (zoom_center, flip, darker),
+        "people": (flip, darker),     # faces are aligned: never crop them
+    },
+    "strong": {
+        "objects": (zoom_center, flip, darker, brighter, rot_left, rot_right,
+                    part_tl, part_tr, part_bl, part_br, cover_tl, cover_br, blur),
+        "people": (flip, darker, brighter, tilt_left, tilt_right, blur, cover_low),
+    },
 }
+
+
+def augmentations(task, profile=None):
+    """The variant functions for a task under a profile (default: the configured one)."""
+    profile = profile or config.AUGMENT_PROFILE
+    if not profile:
+        return ()
+    return AUGMENT_PROFILES[profile].get(task, ())
+
+
+# kept for the tools: the configured profile per task
+AUGMENT = {task: augmentations(task) for task in ("objects", "people")}
 
 
 def _unit(v):
@@ -328,7 +436,7 @@ class VisualTask:
             if held is None:
                 raise LookupError("the selection expired; press TEACH again")
             crops, tid, _ = held
-            augs = AUGMENT.get(self.name, ()) if config.AUGMENT else ()
+            augs = augmentations(self.name)
             try:
                 if not norm_label(label):
                     raise ValueError("empty label")
@@ -414,22 +522,82 @@ class VisualTask:
                 raise
             return len(ids)
 
+    # -- variants of the views already taught ----------------------------------
+
+    def _view_images(self):
+        """[(view id, label, picture)] of every taught view: its kept crop, else
+        its 160 px thumbnail (views taught before crops were kept)."""
+        out = []
+        for e in self.memory.examples():
+            img = None
+            for folder, name in ((self.crops, e.get("crop")), (self.thumbs, e.get("thumb"))):
+                if name:
+                    img = cv2.imread(str(folder / name))
+                    if img is not None:
+                        break
+            if img is None:
+                continue
+            if self.name == "people" and img.shape[:2] != (112, 112):
+                img = cv2.resize(img, (112, 112), interpolation=cv2.INTER_AREA)  # SFace input
+            out.append((e["id"], e["label"], img))
+        return out
+
+    def _variant_points(self, views, profile=None, with_thumbs=False):
+        points = []
+        fns = augmentations(self.name, profile)
+        if not fns:
+            return points
+        for vid, label, img in views:
+            pics = [fn(img) for fn in fns]
+            for fn, pic, vec in zip(fns, pics, self.embed(pics)):
+                p = {"vector": vec, "label": label, "parent": vid, "aug": fn.__name__,
+                     "source": self.source}
+                if with_thumbs:
+                    p["thumb"] = self._save_thumb(pic)
+                points.append(p)
+        return points
+
+    def refresh_variants(self):
+        """Rebuild the variants of every taught view with the current profile
+        (e.g. after switching to "strong"), so nothing has to be re-taught."""
+        with self._lock:
+            views = self._view_images()
+            points = self._variant_points(views, with_thumbs=True)
+            removed = self.memory.forget_variants()
+            self.memory.teach_many(points)
+        self.gc_thumbs()
+        return {"views": len(views), "removed": removed, "added": len(points),
+                "profile": config.AUGMENT_PROFILE}
+
     def run_eval(self, extras=True):
         """Score the test set against the live memory; save JSON + Markdown.
 
+        With `extras`, the same test set is also scored with the variants of
+        each augmentation profile rebuilt from the taught views (none, basic,
+        strong), so the profile can be chosen by measurement.
         Returns the report (dict) and the file stem under data/reports/.
         """
         import json
-        from teachable_eye.evaluation import evaluate, to_markdown
+        from teachable_eye.evaluation import evaluate, profile_summary, to_markdown
         with self._lock:
             items = self.evalset.items()
             images = [self.evalset.image(it["id"]) for it in items]
             vectors = self.embed(images) if images else []
             for it, vec in zip(items, vectors):
                 it["vector"] = vec
-            report = evaluate(self.memory.points(), items, self.memory.thresholds,
+            points = self.memory.points()
+            report = evaluate(points, items, self.memory.thresholds,
                               task=self.name, encoder=getattr(self, "encoder", None),
                               extras=extras)
+            if extras and items:
+                views = self._view_images()
+                roots = {p["id"]: p for p in points if not p.get("parent")}
+                base = [roots[vid] for vid, _, _ in views if vid in roots]
+                report["profiles"] = {}
+                for name in ("none", *AUGMENT_PROFILES):
+                    pts = base + (self._variant_points(views, name) if name != "none" else [])
+                    r = evaluate(pts, items, self.memory.thresholds, extras=False)
+                    report["profiles"][name] = profile_summary(r, len(pts))
         for it in report["items"]:
             it.pop("vector", None)
         folder = config.DATA_DIR / "reports"

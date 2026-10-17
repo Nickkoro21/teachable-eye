@@ -167,6 +167,7 @@ def create_app(tasks, cert_path=None, info=None):
     @app.get("/api/status")
     async def status():
         return {
+            "augment": config.AUGMENT_PROFILE,
             "tasks": {name: {"threshold": t.memory.thresholds.threshold,
                              "margin": t.memory.thresholds.margin,
                              "encoder": getattr(t, "encoder", None),
@@ -356,6 +357,11 @@ def create_app(tasks, cert_path=None, info=None):
         await run(task.gc_thumbs)
         return {"deleted": n}
 
+    @app.post("/api/refresh_variants")
+    async def refresh_variants(body: TaskBody):
+        """Rebuild every view's variants with the configured profile."""
+        return await run(task_of(body.task).refresh_variants)
+
     @app.post("/api/wipe")
     async def wipe(body: TaskBody):
         task = task_of(body.task)
@@ -424,7 +430,7 @@ def create_app(tasks, cert_path=None, info=None):
         report, stem = await run(task_of(body.task).run_eval)
         keep = ("task", "encoder", "created", "memory", "test", "current",
                 "recommended", "top1", "separation", "augmentation", "views_curve",
-                "classifier", "notes")
+                "classifier", "notes", "profiles")
         return {"report": stem, **{k: report.get(k) for k in keep}}
 
     @app.get("/api/reports/{stem}.md")

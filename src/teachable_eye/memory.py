@@ -127,6 +127,17 @@ class TaskMemory:
                 self.shard.flush()
         return len(ids)
 
+    def forget_variants(self):
+        """Delete every augmented variant (their views stay). Returns how many."""
+        with self._lock:
+            records, _ = self.shard.scroll(ScrollRequest(
+                limit=SCAN_LIMIT, with_payload=True))
+            ids = [str(r.id) for r in records if r.payload.get("parent")]
+            if ids:
+                self.shard.update(UpdateOperation.delete_points(ids))
+                self.shard.flush()
+            return len(ids)
+
     def forget_example(self, pid):
         """Delete one taught view and the augmented variants made from it."""
         with self._lock:

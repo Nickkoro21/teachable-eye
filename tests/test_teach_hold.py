@@ -180,16 +180,18 @@ def test_variants_have_own_thumbs_and_go_with_their_view(task):
     and their thumbnail files (people must be forgettable completely)."""
     task.process(np.zeros((100, 100, 3), np.uint8), now=1.0)
     task.teach_held(task.hold(7), "bag")
+    from teachable_eye.tasks import augmentations
+    expected = sorted(fn.__name__ for fn in augmentations("objects"))
     view = task.memory.labels()[0]["examples"][0]
     names = sorted(v["aug"] for v in view["variants"])
-    assert names == ["darker", "flip", "zoom_center"]
+    assert names == expected and {"darker", "flip", "zoom_center"} <= set(names)
     thumbs = {view["thumb"]} | {v["thumb"] for v in view["variants"]}
-    assert len(thumbs) == 4                                  # each has its own
+    assert len(thumbs) == len(expected) + 1                  # each has its own
     assert all((task.thumbs / name).exists() for name in thumbs)
     # one variant can go on its own
     task.memory.forget_example(view["variants"][0]["id"])
     task.gc_thumbs()
-    assert len(task.memory.labels()[0]["examples"][0]["variants"]) == 2
+    assert len(task.memory.labels()[0]["examples"][0]["variants"]) == len(expected) - 1
     # the main view takes the rest with it, files included
     task.memory.forget_example(view["id"])
     assert task.gc_thumbs() >= 3
@@ -244,7 +246,8 @@ def test_people_box_drawn_on_a_photo_snaps_to_a_face(tmp_path, monkeypatch):
     row = task.region([0.1, 0.1, 0.5, 0.5])
     assert row["box"] == [0.2, 0.2, 0.4, 0.45] and row["manual"]
     assert task.teach_held(task.hold(row["id"], from_still=True), "person-a")
-    assert mem.count() == 3                       # the face + mirror + darker
+    from teachable_eye.tasks import augmentations
+    assert mem.count() == 1 + len(augmentations("people"))   # the face + its variants
     with pytest.raises(LookupError):
         task.follow([0.1, 0.1, 0.5, 0.5])
     mem.close()
@@ -284,3 +287,38 @@ def test_long_burst_is_thinned_evenly_not_cut(monkeypatch):
     assert len(b.crops) <= 20
     assert max(b.crops[0].shape[:2]) <= tasks.CROP_SIZE    # stored small
     assert b.offered == 100
+
+
+def test_augmentation_profiles_keep_shapes_sane():
+    """Every variant is a valid picture; people never get crops of the face."""
+    from teachable_eye.tasks import AUGMENT_PROFILES
+    crop = np.random.default_rng(0).integers(0, 255, (120, 90, 3), dtype=np.uint8)
+    for profile in AUGMENT_PROFILES.values():
+        for task, fns in profile.items():
+            for fn in fns:
+                out = fn(crop)
+                assert out.ndim == 3 and out.shape[2] == 3 and min(out.shape[:2]) >= 20, fn
+                if task == "people":                 # aligned faces keep their size
+                    assert out.shape == crop.shape, fn
+    names = {fn.__name__ for fn in AUGMENT_PROFILES["strong"]["people"]}
+    assert not names & {"zoom_center", "part_tl", "part_tr", "part_bl", "part_br"}
+
+
+def test_refresh_variants_rebuilds_them_with_the_new_profile(task, monkeypatch):
+    """Switching to the strong profile must not need any re-teaching."""
+    from teachable_eye.tasks import augmentations
+    monkeypatch.setattr(config, "AUGMENT_PROFILE", "basic")
+    task.process(np.zeros((100, 100, 3), np.uint8), now=1.0)
+    task.teach_held(task.hold(7), "bag")
+    assert task.memory.count() == 1 + len(augmentations("objects", "basic"))
+    old_thumbs = set(task.thumbs.glob("*.jpg"))
+    monkeypatch.setattr(config, "AUGMENT_PROFILE", "strong")
+    res = task.refresh_variants()
+    strong = len(augmentations("objects", "strong"))
+    assert res == {"views": 1, "removed": 3, "added": strong, "profile": "strong"}
+    view = task.memory.labels()[0]["examples"][0]
+    assert len(view["variants"]) == strong
+    assert task.memory.count() == 1 + strong
+    new_thumbs = set(task.thumbs.glob("*.jpg"))
+    assert len(new_thumbs) == 1 + strong                 # old variant thumbs gone
+    assert len(old_thumbs & new_thumbs) == 1             # only the view's own thumb

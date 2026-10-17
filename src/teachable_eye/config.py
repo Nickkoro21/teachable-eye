@@ -69,8 +69,18 @@ DETECT_MIN_AREA = _num("DETECT_MIN_AREA", 0.0003)   # small things count too
 # edges are flagged "background" (thin, never the default target) instead.
 DETECT_MAX_AREA = _num("DETECT_MAX_AREA", 0.90)
 
-# Teach-time augmentation (zoom, flip, darker variants of each taught view).
-AUGMENT = os.environ.get("AUGMENT", "on").strip().lower() not in ("off", "0", "false")
+# Teach-time augmentation: variants stored with each taught view.
+#   strong (default; "on" means strong): crops, rotations, cover-ups, light, blur
+#   basic: zoom, mirror, darker (the first version)   off: none
+_aug = os.environ.get("AUGMENT", "strong").strip().lower() or "strong"
+if _aug in ("on", "1", "true"):
+    _aug = "strong"
+if _aug in ("0", "false"):
+    _aug = "off"
+if _aug not in ("off", "basic", "strong"):
+    raise SystemExit(f"AUGMENT must be off, basic or strong, got {_aug!r}")
+AUGMENT = _aug != "off"
+AUGMENT_PROFILE = _aug if AUGMENT else None
 
 # Where the ONNX encoders run: auto (CUDA when available), cuda, or cpu.
 ENCODER_DEVICE = _choice("ENCODER_DEVICE", "auto", {"auto", "cuda", "cpu"})

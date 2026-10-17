@@ -310,6 +310,16 @@ def evaluate(points, items, bands, task="objects", encoder=None, extras=True):
     return report
 
 
+def profile_summary(r, points):
+    """The few numbers that decide between augmentation profiles."""
+    rec = r["recommended"]
+    return {"points": points, "top1": r["top1"], "auc": r["separation"]["auc"],
+            "threshold": rec["threshold"], "correct": rec["correct"],
+            "enrolled": rec["enrolled"], "correct_rate": rec["correct_rate"],
+            "rejected": rec["rejected"], "strangers": rec["strangers"],
+            "dangerous_at_current": r["current"]["dangerous"]}
+
+
 def _pct(x):
     return "—" if x is None else f"{100 * x:.0f}%"
 
@@ -348,6 +358,18 @@ def to_markdown(r):
                   "| | nearest-label accuracy | correct with no dangerous error |", "|---|---|---|",
                   f"| with variants | {_pct(a['with_top1'])} | {_pct(a['with_safe_correct_rate'])} |",
                   f"| without | {_pct(a['without_top1'])} | {_pct(a['without_safe_correct_rate'])} |", ""]
+    if r.get("profiles"):
+        lines += ["## Augmentation profiles (same views, same test set)", "",
+                  "| profile | memory points | nearest-label acc. | AUC | correct, no dangerous error "
+                  "| strangers → unknown | dangerous at current bands |",
+                  "|---|---|---|---|---|---|---|"]
+        for name, p in r["profiles"].items():
+            lines.append(f"| {name} | {p['points']} | {_pct(p['top1'])} | "
+                         f"{'—' if p['auc'] is None else f'{p['auc']:.3f}'} | "
+                         f"{p['correct']}/{p['enrolled']} at {p['threshold']:.2f} | "
+                         f"{p['rejected']}/{p['strangers']} | {p['dangerous_at_current']} |")
+        lines += ["", "Choose the profile with more correct answers and no more dangerous "
+                  "errors; set it with AUGMENT in .env, then Memory → Update variants.", ""]
     if r.get("views_curve"):
         lines += ["## Views needed", "", "| views per label | nearest-label accuracy | correct (recommended bands) |",
                   "|---|---|---|"]

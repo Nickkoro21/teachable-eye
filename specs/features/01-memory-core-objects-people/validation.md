@@ -23,6 +23,9 @@ Every item is scored **pass/fail**. The feature is done when all automated check
 | A14 | Claude help is refused when `ASSIST` is off and for the people task | R36 |
 | A15 | Name suggestions: a face crop is not sent (and no call at all if nothing is sendable); the request uses structured output and the refusal fallback; usage is logged | R36, R37, R41 |
 | A17 | A box drawn on a photo in People mode: no photo → error; no face → "no face found"; a face → snapped box, taught with its variants; faces are not followed | R48 |
+| A18 | Video teach: no stop before time; a 180° turn keeps both ends; 40 very different views keep exactly 15; a long recording is thinned evenly and stored small | R49 |
+| A19 | Recognition lists one best score per nearby label, best first | R50 |
+| A20 | Every variant of every profile is a valid picture; faces keep their size and are never cropped; Update variants swaps basic for strong and deletes the old variant thumbnails; the evaluation reports none/basic/strong on the same test set | R51, R52 |
 | A16 | Second opinion returns only a candidate label (never an invented one), never sends a face; questions and summaries send no pictures and no per-view rows | R38-R40 |
 
 ## Level 2: Measured (recorded in the PR description)
@@ -54,6 +57,7 @@ Every item is scored **pass/fail**. The feature is done when all automated check
 | H12 | Claude help on: Suggest names on a photo with a person in it; Ask Claude on an uncertain object; Summary; Ask about memory | Names pre-filled except the person's box (🔒); every answer shown, nothing saved without Save |
 | H13 | Two objects on screen, none tapped: TEACH asks to choose; tap one, drag it, drag a corner, ✕ the other; pinch-zoom a photo and box a small part (e.g. a button) | Only the active box is taught; the moved/resized box is the one taught; the dropped box does not come back; zoomed boxes line up with the picture |
 | H14 | PC: 🗂 Memory & evaluation while the phone streams; 🖼 a few phone pictures and a short video: box, teach, Next, Use this frame; People: draw a box round a small or turned face | The phone keeps its camera; pictures and frames can be labelled like photos; the drawn face box snaps to the face (or says none was found) |
+| H15 | Video teach of a face turning slowly for ~10 s; tap the label of an uncertain box | ~15 views spread over the whole turn; the panel lists the next labels with scores and the gap |
 
 ## Sign-off
 - [ ] Level 1 all pass

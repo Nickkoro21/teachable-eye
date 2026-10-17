@@ -269,3 +269,5 @@ body.mirror #video, body.mirror #frozen { transform: scaleX(-1); }
 .crow .bar i { display: block; height: 100%; background: var(--uncertain); }
 .crow.top .bar i { background: var(--known); }
 .crow small { color: var(--muted); }
+.refresh { margin-top: 12px; padding: 11px; }
+.evalres .profiles td:first-child { font-weight: 600; }

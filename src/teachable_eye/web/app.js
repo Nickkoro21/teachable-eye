@@ -46,6 +46,13 @@ const I18N = {
     micShort: "Hold 🎤 while you speak, then let go.", heard: "Heard: “{0}”",
     micError: "Microphone unavailable: {0}", recognising: "Recognising…",
     aug_zoom_center: "zoom", aug_flip: "mirror", aug_darker: "darker", variant: "variant",
+    aug_brighter: "brighter", aug_rot_left: "turned left", aug_rot_right: "turned right",
+    aug_tilt_left: "tilted left", aug_tilt_right: "tilted right", aug_part_tl: "part (top left)",
+    aug_part_tr: "part (top right)", aug_part_bl: "part (bottom left)", aug_part_br: "part (bottom right)",
+    aug_cover_tl: "quarter hidden", aug_cover_br: "quarter hidden", aug_cover_low: "chin hidden", aug_blur: "blurred",
+    refreshVariants: "Update variants ({0})", refreshConfirm: "Rebuild the variants of every view in this memory with the “{0}” profile?",
+    refreshed: "Variants rebuilt: {0} views, {1} variants.", working: "Working…",
+    profilesTitle: "Augmentation profiles (same test set)",
     liveTapHint: "Nothing there. Take a Photo to mark your own box.",
     known: "known", uncertain: "uncertain", unknown: "unknown", pending: "looking…",
     maybe: "maybe", views: "views", rename: "Rename", forget: "Forget",
@@ -122,6 +129,13 @@ const I18N = {
     micShort: "Κράτα πατημένο το 🎤 όσο μιλάς και μετά άφησέ το.", heard: "Άκουσα: «{0}»",
     micError: "Το μικρόφωνο δεν είναι διαθέσιμο: {0}", recognising: "Αναγνώριση…",
     aug_zoom_center: "ζουμ", aug_flip: "καθρέφτης", aug_darker: "σκοτεινό", variant: "παράγωγο",
+    aug_brighter: "φωτεινό", aug_rot_left: "στροφή αριστερά", aug_rot_right: "στροφή δεξιά",
+    aug_tilt_left: "κλίση αριστερά", aug_tilt_right: "κλίση δεξιά", aug_part_tl: "κομμάτι (πάνω αριστερά)",
+    aug_part_tr: "κομμάτι (πάνω δεξιά)", aug_part_bl: "κομμάτι (κάτω αριστερά)", aug_part_br: "κομμάτι (κάτω δεξιά)",
+    aug_cover_tl: "κρυμμένο ¼", aug_cover_br: "κρυμμένο ¼", aug_cover_low: "κρυμμένο σαγόνι", aug_blur: "θολό",
+    refreshVariants: "Ενημέρωση παραγώγων ({0})", refreshConfirm: "Να ξαναφτιαχτούν τα παράγωγα όλων των όψεων με το προφίλ «{0}»;",
+    refreshed: "Τα παράγωγα ξαναφτιάχτηκαν: {0} όψεις, {1} παράγωγα.", working: "Εργάζομαι…",
+    profilesTitle: "Προφίλ augmentation (ίδιο σύνολο δοκιμής)",
     liveTapHint: "Δεν υπάρχει κάτι εκεί. Πάτα Φωτό για να σημειώσεις δικό σου πλαίσιο.",
     known: "γνωστό", uncertain: "αβέβαιο", unknown: "άγνωστο", pending: "κοιτάζω…",
     maybe: "ίσως", views: "όψεις", rename: "Μετονομασία", forget: "Ξέχνα",
@@ -164,7 +178,9 @@ const STILL_SIDE = 1920;       // photo mode
 const MIN_INTERVAL_MS = 150;   // ~6 fps ceiling
 const VIDEO_MAX_SECONDS = 60;   // video teach runs until Stop; this is only a safety cap
 // teach-time augmentation variants (see tasks.AUGMENT on the server)
-const AUG_ICON = { zoom_center: "🔍", flip: "⇋", darker: "◐" };
+const AUG_ICON = { zoom_center: "🔍", flip: "⇋", darker: "◐", brighter: "☀", rot_left: "↺",
+  rot_right: "↻", tilt_left: "↺", tilt_right: "↻", part_tl: "◰", part_tr: "◳", part_bl: "◱",
+  part_br: "◲", cover_tl: "▚", cover_br: "▞", cover_low: "▁", blur: "≈" };
 function augName(aug) { return aug ? t(`aug_${aug}`) : ""; }
 
 const COLORS = { known: "#14b8a6", uncertain: "#f59e0b", unknown: "#94a3b8", pending: "#e8eefc" };
@@ -259,6 +275,7 @@ async function checkServer() {
     const st = await res.json();
     state.tasks = Object.keys(st.tasks || { objects: 1 });
     state.bands = st.tasks || {};
+    state.augment = st.augment || "";
     $("landStatus").textContent = t("serverOk", state.tasks.map((k) => t(k)).join(", "));
     up = true;
   } catch {
@@ -1537,6 +1554,8 @@ async function showMemTab(tab) {
   $("memPane").hidden = tab !== "memory";
   $("testPane").hidden = tab !== "test";
   $("wipeBtn").hidden = tab !== "memory" || state.task !== "people";
+  $("refreshBtn").hidden = tab !== "memory" || !state.augment;
+  $("refreshBtn").textContent = t("refreshVariants", state.augment || "");
   if (tab === "test") await renderTest(); else await renderMemory();
 }
 
@@ -1610,6 +1629,9 @@ function renderEval(r) {
       <th>${t("colStrangers")}</th></tr>
       ${line(t("bandsCur"), r.current)}${line(t("bandsRec"), r.recommended)}</table>
     <ul><li>${t("dangerNote")}</li>${notes}</ul>
+    ${r.profiles ? `<b>${t("profilesTitle")}</b><table class="profiles">${Object.entries(r.profiles).map(([n, p]) =>
+      `<tr><td>${n}</td><td>${p.correct}/${p.enrolled} <small>${pct(p.correct_rate)}</small></td>
+       <td>${p.rejected}/${p.strangers}</td><td class="${p.dangerous_at_current ? "bad" : "ok"}">${p.dangerous_at_current}</td></tr>`).join("")}</table>` : ""}
     <a href="/api/reports/${r.report}.md" target="_blank" rel="noopener">${t("fullReport")}</a>
     ${assistOk() ? `<button type="button" class="askclaude" id="sumBtn">${t("summary")}</button>` : ""}
     <div id="sumOut" class="answer" hidden></div></div>`;
@@ -1825,6 +1847,17 @@ $("assistToggle").onchange = (ev) => { state.assistOn = ev.target.checked; store
 document.querySelectorAll("#memTabs button").forEach((b) => { b.onclick = () => showMemTab(b.dataset.tab); });
 $("askForm").onsubmit = askMemory;
 $("runEval").onclick = runEval;
+$("refreshBtn").onclick = async () => {
+  if (!confirm(t("refreshConfirm", state.augment))) return;
+  const btn = $("refreshBtn");
+  btn.disabled = true; btn.textContent = t("working");
+  try {
+    const res = await api("/api/refresh_variants", { task: state.task });
+    toast(t("refreshed", res.views, res.added), 5000);
+    renderMemory();
+  } catch (err) { toast(err.message, 5000); }
+  btn.disabled = false; btn.textContent = t("refreshVariants", state.augment);
+};
 $("multiForm").onsubmit = saveMulti;
 $("teachBtn").onclick = teachSelected;
 $("videoBtn").onclick = startBurst;
