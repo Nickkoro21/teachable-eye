@@ -501,6 +501,38 @@ class VisualTask:
         """Hold and teach in one step (used by tests and tools)."""
         return self.teach_held(self.hold(tid), label)
 
+    def confirm(self, rid, label, from_still=False, still_id=None):
+        """One tap on "maybe X?": teach the box's crop as X.
+
+        The guess is checked again first, because the picture may have moved
+        under a finger already on its way down: live, the guess on screen for
+        that track must still be X; on a photo, the crop must still come out
+        nearest to X. Returns the new view id, or None (nothing written).
+        Adapted from https-deeplearning-ai/sc-on-device-ai-memory,
+        robot/brain/core.py `confirm` (Apache-2.0).
+        """
+        with self._lock:              # check and freeze in one step (not re-entrant)
+            if from_still:
+                self._use_still(still_id)
+                crop = self._still_crops.get(rid)
+                if crop is None:
+                    return None
+                d = self.memory.recognize(self.embed([crop])[0])
+                if (d.label or d.guess) != label:
+                    return None
+                hid = self._new_hold([crop], None)
+            else:
+                shown = self._shown.get(rid)
+                if shown is None or (shown.label or shown.guess) != label:
+                    return None
+                track = self._track(rid)
+                crop = track.crop if track is not None and track.crop is not None \
+                    else self._crops.get(rid)
+                if crop is None:
+                    return None
+                hid = self._new_hold([crop], rid)
+        return self.teach_held(hid, label)
+
     def still_crops(self, rids, still_id=None):
         """Crops of rows of a photo (None where a row is unknown)."""
         with self._lock:

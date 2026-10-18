@@ -89,7 +89,7 @@ applied to the author's memories (objects 286, people 623 variants). Liveness re
 regression tests (N8-N11, R53). 81 tests passing.
 
 ## Next steps (in order) — updated 2026-10-18
-1. **Three small ideas from the course repo** (proposed, waiting for the author's go): trim silence
+1. ~~**Three small ideas from the course repo**~~ — done 2026-10-18 (R54-R56): trim silence
    before Whisper; one-tap "yes, it is X" on an `uncertain` guess (re-checked before writing); the
    calibration caveat in the evaluation (a safety margin above the lowest safe threshold, and test
    views taken through the live pipeline). A memory backup is not needed yet (author, 2026-10-18).

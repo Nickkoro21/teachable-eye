@@ -28,6 +28,7 @@ import numpy as np
 KNOWN, UNCERTAIN, UNKNOWN = "known", "uncertain", "unknown"
 STEP = 0.005               # threshold sweep resolution
 MARGIN_RANGE = (0.02, 0.15)
+SAFETY = 0.02              # added above the lowest safe threshold (see recommend)
 CURVE_REPEATS = 20
 
 
@@ -166,8 +167,13 @@ def recommend(rows, current):
     strangers = [r["score"] for r in rows if not r["enrolled"]]
     notes = []
     if danger:
-        t = math.floor(max(danger) / STEP + 1) * STEP       # just above the worst
-        basis = "lowest threshold with zero dangerous errors on the test set"
+        # just above the worst dangerous score, plus a safety margin: test
+        # views give only a FLOOR, live scenes score closer (course repo,
+        # testdata/verify_scores.py: start at the top of the clean range)
+        lowest = math.floor(max(danger) / STEP + 1) * STEP
+        t = lowest + SAFETY
+        basis = (f"zero dangerous errors on the test set from {lowest:.3f}, plus a "
+                 f"{SAFETY:.2f} safety margin (live scenes score closer than separate photos)")
     elif correct:
         t = min(current.threshold, math.floor(min(correct) * 100) / 100)
         basis = "no wrong-label or stranger scores to stay above; kept at or below the current threshold"
@@ -343,7 +349,11 @@ def to_markdown(r):
             f"{c['missed']} | {c['rejected']}/{c['strangers']} ({_pct(c['reject_rate'])}) |")
     lines += ["", f"Recommended threshold: {rec['basis']}.", "",
               "*Dangerous* = a confident wrong name (wrong label, or a stranger taken for "
-              "something taught). It must stay at zero.", ""]
+              "something taught). It must stay at zero.", "",
+              "Separately taken pictures give only a *floor* for the threshold: in live use "
+              "different things score closer to each other. Test views should come through "
+              "the live camera (the 🧪 switch does this), and the threshold should stay at "
+              "or above the recommended one.", ""]
     sep = r["separation"]
     if sep["auc"] is not None:
         lines += ["## Separation", "",

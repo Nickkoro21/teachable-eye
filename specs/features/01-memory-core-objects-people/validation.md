@@ -29,6 +29,9 @@ Every item is scored **pass/fail**. The feature is done when all automated check
 | A21 | Foreign Host → 400; cross-site POST → 403; cross-site camera socket refused; own origin and tools without Origin work | N8 |
 | A22 | 48 MP picture, 4 kHz audio, bad boxes, 61-character label refused | N9 |
 | A23 | Two open photos never mix crops; an unknown photo id is refused; a failed save keeps the selection; runner-ups survive one label filling the pool; forgetting removes test views and reports | R53, N10, R50 |
+| A24 | Silence around a sentence is cut before Whisper; the model gets only the speech | R54 |
+| A25 | One-tap confirm teaches only a guess still shown (live) or still nearest (photo); a moved guess saves nothing (409) | R55 |
+| A26 | The recommended threshold is at least the worst dangerous score + 0.02, and the report carries the "floor" caveat | R56 |
 | A16 | Second opinion returns only a candidate label (never an invented one), never sends a face; questions and summaries send no pictures and no per-view rows | R38-R40 |
 
 ## Level 2: Measured (recorded in the PR description)

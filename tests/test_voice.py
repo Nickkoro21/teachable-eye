@@ -78,3 +78,20 @@ def test_a_tiny_declared_rate_cannot_blow_up_memory(fake):
     with pytest.raises(ValueError, match="8-48 kHz"):
         voice.transcribe(wav(1.0, rate=4000), "en")
     assert not fake.calls
+
+
+def test_silence_around_the_sentence_is_cut_before_whisper(fake):
+    """Held-button silence is trimmed (faster, fewer invented words)."""
+    rate = 16_000
+    quiet = np.zeros(rate * 2, np.float32)                       # 2 s each side
+    speech = (np.sin(np.arange(rate) * 2 * np.pi * 220 / rate) * 0.3).astype(np.float32)
+    audio = np.concatenate([quiet, speech, quiet])
+    trimmed = voice.trim_to_speech(audio)
+    assert 1.0 <= len(trimmed) / rate <= 1.0 + 2 * voice.TRIM_PAD + 0.11
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as w:
+        w.setnchannels(1); w.setsampwidth(2); w.setframerate(rate)
+        w.writeframes((audio * 32767).astype("<i2").tobytes())
+    out = voice.transcribe(buf.getvalue(), "el")
+    assert out["seconds"] == 5.0 and out["speech"] < 1.6
+    assert fake.calls[0][0] == len(trimmed)                      # the model got the short clip

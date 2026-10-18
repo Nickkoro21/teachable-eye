@@ -68,6 +68,8 @@ const I18N = {
     candClose: "“{0}” is close (−{1}): teach more views of both, where they look alike.",
     candClear: "Clear lead over “{0}” (−{1}).", candOne: "No other label nearby.",
     candTap: "Tap the label to open or close this.",
+    confirmYes: "✓ Yes, it is “{0}”", confirmed: "Added a view to “{0}”.",
+    consentAsk: "Has “{0}” agreed to be remembered on this device?",
     recViews: "{0} views", noViews: "No views captured — keep it in view and try again.",
     assistTitle: "✨ Claude help (cloud, optional)",
     assistNote: "Name suggestions, a second opinion, report summaries. Objects only; pictures with a face never leave the PC.",
@@ -151,6 +153,8 @@ const I18N = {
     candClose: "Το «{0}» είναι κοντά (−{1}): δίδαξε κι άλλες όψεις και στα δύο, εκεί που μοιάζουν.",
     candClear: "Καθαρό προβάδισμα από το «{0}» (−{1}).", candOne: "Καμία άλλη ετικέτα κοντά.",
     candTap: "Πάτα την ετικέτα για άνοιγμα ή κλείσιμο.",
+    confirmYes: "✓ Ναι, είναι «{0}»", confirmed: "Προστέθηκε μια όψη στο «{0}».",
+    consentAsk: "Έχει συμφωνήσει το «{0}» να το θυμάται αυτή η συσκευή;",
     recViews: "{0} όψεις", noViews: "Δεν καταγράφηκαν όψεις — κράτα το στο κάδρο και ξαναδοκίμασε.",
     assistTitle: "✨ Βοήθεια από το Claude (cloud, προαιρετική)",
     assistNote: "Προτάσεις ονομάτων, δεύτερη γνώμη, σύνοψη αναφορών. Μόνο αντικείμενα· εικόνες με πρόσωπο δεν φεύγουν ποτέ από το PC.",
@@ -214,6 +218,7 @@ const state = {
   dismissed: new Set(),  // live track ids the user dropped with ✕
   epoch: 0,              // bumped when the screen changes: late answers are dropped
   holding: false, burstStarting: false, burstFails: 0,
+  confirming: false, consented: new Set(),   // one-tap "yes, it is X"
   view: { s: 1, x: 0, y: 0 },   // pinch zoom of the paused photo (screen space)
   pinch: null, camZoom: null,
   source: "camera",      // or "picture": a file from the device, no camera
@@ -734,8 +739,13 @@ function renderCard() {
   // 2026-10-16). The card only carries Claude's opinion, when asked for.
   const asked = r && state.opinion && state.opinion.rid === r.id;
   const offer = r && assistOk() && (r.decision === "uncertain" || r.decision === "unknown");
-  if (!r || r.decision === "pending" || state.burst || !(asked || offer)) { card.hidden = true; return; }
-  card.innerHTML = opinionHtml(r);
+  // "maybe X?" on the active box: one tap teaches it as X (not while
+  // collecting test views: those must never reach memory)
+  const yes = r && r.decision === "uncertain" && r.guess && !r.taught && !r.tested
+    && !state.evalMode;
+  if (!r || r.decision === "pending" || state.burst || !(asked || offer || yes)) { card.hidden = true; return; }
+  card.innerHTML = (yes ? `<button type="button" class="yesbtn" data-yes="1"${state.confirming ? " disabled" : ""}>
+      ${escapeHtml(t("confirmYes", r.guess))}</button>` : "") + opinionHtml(r);
   card.classList.toggle("compact", !asked);
   card.hidden = false;
 }
@@ -773,7 +783,34 @@ async function askOpinion() {
   renderCard();
 }
 
+// "✓ Yes, it is X" (adapted from the course robot's one-tap confirm): the
+// PC checks the guess again before writing, so a moved picture saves nothing.
+async function confirmGuess() {
+  const r = source().rows.find((q) => q.id === state.selected);
+  if (!r || !r.guess || state.confirming) return;
+  const label = r.guess;
+  let consent = false;
+  if (state.task === "people") {
+    if (!state.consented.has(label)) {
+      if (!confirm(t("consentAsk", label))) return;
+      state.consented.add(label);
+    }
+    consent = true;
+  }
+  state.confirming = true;
+  renderCard();
+  try {
+    await api("/api/confirm", { task: state.task, id: r.id, label, still: !!state.still,
+                                still_id: stillId(), consent });
+    toast(t("confirmed", label));
+    if (navigator.vibrate) navigator.vibrate(20);
+    if (state.still) Object.assign(r, { taught: true, label });
+  } catch (err) { toast(err.message, 4000); }
+  finally { state.confirming = false; renderCard(); }
+}
+
 $("card").addEventListener("click", (ev) => {
+  if (ev.target.closest("[data-yes]")) { confirmGuess(); return; }
   if (ev.target.closest("[data-ask]")) askOpinion();
   const op = state.opinion;
   if (ev.target.closest("[data-teach-as]") && op && op.match) {

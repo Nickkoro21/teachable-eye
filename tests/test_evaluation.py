@@ -153,3 +153,15 @@ def test_forgetting_a_label_removes_its_test_views_and_reports(task, tmp_path):
     task.forget_everywhere("person-a")
     assert [i["label"] for i in task.evalset.items()] == ["person-b"]
     assert sorted(p.name for p in reports.iterdir()) == ["eval-objects-20261017-100001.json"]
+
+
+def test_recommended_threshold_keeps_a_safety_margin():
+    """Test photos are only a floor (course repo, verify_scores.py)."""
+    from teachable_eye.evaluation import SAFETY
+    r = evaluate(points(), items(), TaskThresholds(0.30, 0.10))
+    rows = score_items(Memory(points()), items())
+    worst = max(x["score"] for x in rows
+                if not x["enrolled"] or x["top_label"] != x["label"])
+    assert r["recommended"]["threshold"] >= worst + SAFETY - 1e-9
+    assert "safety margin" in r["recommended"]["basis"]
+    assert "floor" in to_markdown(r)

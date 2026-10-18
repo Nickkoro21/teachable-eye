@@ -130,6 +130,15 @@ class LabelBody(BaseModel):
     to: str | None = None
 
 
+class ConfirmBody(BaseModel):
+    task: str
+    id: int
+    label: str               # the guess shown when the user tapped
+    still: bool = False
+    still_id: str | None = None
+    consent: bool = False
+
+
 class ExampleBody(BaseModel):
     task: str
     id: str
@@ -386,6 +395,24 @@ def create_app(tasks, cert_path=None, info=None, hosts=None):
             raise
         except Exception as exc:          # GPU / disk: the selection is kept
             raise HTTPException(503, f"could not save, try again: {exc}") from None
+        return {"id": pid}
+
+    @app.post("/api/confirm")
+    async def confirm(body: ConfirmBody):
+        """"Yes, it is X": teach an uncertain box as its own guess, one tap."""
+        task = task_of(body.task)
+        check_label(body.label)
+        if getattr(task, "needs_consent", False) and not body.consent:
+            raise HTTPException(428, "consent required for a person")
+        try:
+            pid = await run(lambda: task.confirm(body.id, body.label, body.still,
+                                                 body.still_id))
+        except (LookupError, ValueError) as exc:
+            raise HTTPException(409, str(exc)) from None
+        except Exception as exc:
+            raise HTTPException(503, f"could not save, try again: {exc}") from None
+        if pid is None:
+            raise HTTPException(409, "the guess changed meanwhile; nothing was saved")
         return {"id": pid}
 
     @app.post("/api/still")

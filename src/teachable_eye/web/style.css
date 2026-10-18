@@ -271,3 +271,10 @@ body.mirror #video, body.mirror #frozen { transform: scaleX(-1); }
 .crow small { color: var(--muted); }
 .refresh { margin-top: 12px; padding: 11px; }
 .evalres .profiles td:first-child { font-weight: 600; }
+
+/* one tap on "maybe X?" */
+.yesbtn { display: block; margin: 0 auto; padding: 9px 16px; border-radius: 999px;
+  background: var(--uncertain); color: #1f1300; font-weight: 700; font-size: 15px;
+  box-shadow: 0 4px 16px #0008; }
+.yesbtn:disabled { opacity: .5; }
+#card.compact .askclaude { display: block; margin: 8px auto 0; }

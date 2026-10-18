@@ -368,3 +368,31 @@ def test_runner_ups_survive_a_label_that_fills_the_pool(tmp_path, monkeypatch):
     labels = [c[0] for c in mem.recognize([1.0, 0.0, 0.0, 0.0]).candidates]
     assert labels[:3] == ["mug", "cup", "hat"]
     mem.close()
+
+
+def test_one_tap_confirm_teaches_only_the_guess_still_shown(task):
+    """'Yes, it is X' re-checks the guess before writing anything."""
+    from teachable_eye.policy import UNCERTAIN, Decision
+    task.process(np.zeros((100, 100, 3), np.uint8), now=1.0)
+    task._shown[7] = Decision(UNCERTAIN, None, "cup", 0.85, [])
+    assert task.confirm(7, "hat") is None                     # the guess moved on
+    assert task.memory.count() == 0
+    assert task.confirm(7, "cup")                             # taught as the guess
+    assert task.memory.labels()[0]["label"] == "cup"
+    # on a photo: the crop must still come out nearest to the guess
+    task.still(np.zeros((100, 100, 3), np.uint8))
+    assert task.confirm(0, "cup", from_still=True)
+    assert task.confirm(0, "hat", from_still=True) is None
+
+
+def test_confirm_endpoint_reports_a_moved_guess(tmp_path, monkeypatch):
+    from fastapi.testclient import TestClient
+    from teachable_eye.server import create_app
+    monkeypatch.setattr(config, "DATA_DIR", tmp_path)
+    mem = TaskMemory(tmp_path / "m3", 4, "objects", config.TaskThresholds(0.9, 0.05))
+    t = ObjectsTask(detector=FakeDetector(), embed=fake_embed, memory=mem)
+    client = TestClient(create_app({"objects": t}))
+    t.process(np.zeros((100, 100, 3), np.uint8), now=1.0)
+    res = client.post("/api/confirm", json={"task": "objects", "id": 7, "label": "cup"})
+    assert res.status_code == 409 and "nothing was saved" in res.json()["error"]
+    mem.close()

@@ -94,13 +94,42 @@ def check(audio):
     return seconds
 
 
+SPEECH_RMS = 0.008         # a 100 ms block this loud (or 15 % of the loudest) is speech
+TRIM_PAD = 0.2             # seconds kept around the speech
+
+
+def trim_to_speech(audio, pad=TRIM_PAD):
+    """Cut the quiet before and after the sentence.
+
+    Holding the button adds silence at both ends; Whisper is faster without
+    it and invents fewer words ("thank you", "Υπότιτλοι...") from silence.
+    Adapted from https-deeplearning-ai/sc-on-device-ai-memory,
+    robot/device/mic.py `trim_to_speech` (Apache-2.0): 100 ms blocks, a
+    speech level, a small pad. Change: works on the float array in memory
+    and the level is also relative to the loudest block (a noisy room).
+    """
+    block = RATE // 10
+    blocks = len(audio) // block
+    if not blocks:
+        return audio
+    level = np.sqrt(np.mean(audio[:blocks * block].reshape(blocks, -1) ** 2, axis=1))
+    loud = np.flatnonzero(level >= max(SPEECH_RMS, 0.15 * float(level.max())))
+    if not len(loud):
+        return audio
+    keep = max(1, int(pad * RATE) // block)
+    a = max(0, loud[0] - keep) * block
+    b = min(len(audio), (loud[-1] + 1 + keep) * block)
+    return audio[a:b]
+
+
 def transcribe(data, lang="en"):
     """WAV bytes -> {"text", "label", "lang", "seconds", "ms"}."""
     lang = lang if lang in ("en", "el") else config.VOICE_LANGUAGE
     audio = read_wav(data)
     seconds = check(audio)
+    speech = trim_to_speech(audio)
     started = time.perf_counter()
-    text = str(load().recognize(audio, sample_rate=RATE, language=lang)).strip()
+    text = str(load().recognize(speech, sample_rate=RATE, language=lang)).strip()
     return {"text": text, "label": parse_label(text), "lang": lang,
-            "seconds": round(seconds, 2),
+            "seconds": round(seconds, 2), "speech": round(len(speech) / RATE, 2),
             "ms": round((time.perf_counter() - started) * 1000)}
