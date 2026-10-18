@@ -1,6 +1,6 @@
 # Roadmap
 
-> Status: **v1.3** (2026-10-16: in-app test set + evaluation, optional Claude help built). Each phase is delivered with the SDD feature loop: `specs/features/NN-name/{feature-plan,requirements,validation}.md` → implement on a feature branch → validate (human-in-the-loop) → replan.
+> Status: **v1.4** (2026-10-18: feature 01 complete on its branch, reviewed; course repo re-checked). Each phase is delivered with the SDD feature loop: `specs/features/NN-name/{feature-plan,requirements,validation}.md` → implement on a feature branch → validate (human-in-the-loop) → replan.
 > Phases 0–6 lead to **Demo v1** (approval). Phases 7+ follow once the project is approved and better equipment is available.
 
 ## Phase 0: Constitution & repo
@@ -88,19 +88,20 @@ applied to the author's memories (objects 286, people 623 variants). Liveness re
 (research/05). Deep review by three sub-agents (backend, phone, security): 32 findings, fixed with
 regression tests (N8-N11, R53). 81 tests passing.
 
-## Next steps (in order)
-1. ~~**Multi-label a photo**~~ — done 2026-10-15 (R32): on a paused photo, "Label all" lists every box
-   (detected and user-drawn) with a thumbnail and a label field each (existing-label chooser,
-   pre-filled when memory already knows it, empty = skip); tapping a row highlights its box; one
-   Save teaches all (each with its variants). Built on the existing per-box hold.
-2. **Data collection (author, 2026-10-16)** with the 🧪 Test set switch (method A, built): teach each
-   object from a few views (Video), then save test views of it in other light / angles / places, plus
-   never-taught "strangers". Run evaluation → write the recommended bands to `.env` if the author agrees;
-   `tools/evaluate.py --encoders` to confirm DINOv2-large. Record M3-M6 in validation.
-3. TG7 voice teach (EN/EL).
-4. Validation sign-off, SDD deep review (sub-agents), merge feature 01 into `main`, changelog.
-5. Replan: licence review of the detector (see tech-stack), then Phase 2 (video file import + aircraft
-   detection/tracking spike on the first phone clips).
+## Next steps (in order) — updated 2026-10-18
+1. **Three small ideas from the course repo** (proposed, waiting for the author's go): trim silence
+   before Whisper; one-tap "yes, it is X" on an `uncertain` guess (re-checked before writing); the
+   calibration caveat in the evaluation (a safety margin above the lowest safe threshold, and test
+   views taken through the live pipeline). A memory backup is not needed yet (author, 2026-10-18).
+2. **Author:** when the models feel robust, collect the 🧪 test set (objects + people, plus
+   never-taught strangers) → Run evaluation → choose bands and augmentation profile by the numbers;
+   record M3-M6. Phone checks H1-H15.
+3. Validation sign-off and merge of feature 01 into `main` (deep review by sub-agents done
+   2026-10-17), changelog.
+4. Feature 02 — parts and their state (inspection points: a clip, a switch, a button), then Phase 2
+   (aircraft video import, detection and tracking on the first phone clips). Liveness spike when the
+   author records the clips (research/05).
+5. Detector licence review (AGPL) before any closed use.
 
 ## Backlog / ideas (research before scheduling)
 - **From the course repo (re-checked 2026-10-18; upstream unchanged since the clone)** — compared

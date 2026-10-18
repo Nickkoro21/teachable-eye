@@ -1,6 +1,6 @@
 # Tech Stack
 
-> Status: **v1.3** (2026-10-16: test set + evaluation, optional Claude help; v1.2: DINOv2-large) — choices marked *(decide by measurement)* are settled by a benchmark inside a feature, not up front.
+> Status: **v1.4** (2026-10-18: As built updated — voice, augmentation profiles, hardening; v1.3: evaluation, Claude help) — choices marked *(decide by measurement)* are settled by a benchmark inside a feature, not up front.
 
 ## Core
 
@@ -34,19 +34,21 @@ Excluded: InsightFace/ArcFace pretrained weights (non-commercial licence).
 
 | Module | Role |
 |---|---|
-| `memory.py` | `TaskMemory`: one Qdrant Edge shard per task, named vector `v`, cosine; teach / recognize (k-NN, variants folded into their view) / forget label / forget view (+ its variants) / rename (merge) / list / wipe; indexes `label`, `kind`, `parent` |
+| `memory.py` | `TaskMemory`: one Qdrant Edge shard per task, named vector `v`, cosine; teach / `teach_many` (one write, one flush) / recognize (k-NN, variants folded into their view, best score of up to 5 nearby labels) / forget label / forget view (+ its variants) / forget variants / rename (merge) / list / wipe; paged scans; indexes `label`, `kind`, `parent` |
 | `policy.py` | `decide()`: `known` (≥ threshold) / `uncertain` (within margin, label only as a guess) / `unknown`; nearest neighbours as evidence |
 | `vote.py` | Per-track majority vote over the last 3 recognitions (no flicker) |
-| `tasks.py` | `VisualTask` shared by objects and people: live processing, hold (freeze TEACH selection), teach-from-video bursts, photo mode, user regions, follow, augmentation, thumbnail GC; `ObjectsTask`, `PeopleTask` |
+| `tasks.py` | `VisualTask` shared by objects and people: live processing, hold (freeze TEACH selection), video teach (until Stop, 15 most different views), photo mode with per-photo ids, user regions (people: snapped to a face), follow, augmentation profiles + Update variants, test set + evaluation, complete forgetting, thumbnail GC; `ObjectsTask`, `PeopleTask` |
 | `detect.py` | YOLOE + BoT-SORT, stability gate (3 frames), masked padded crops, re-query every 2 s; photos at 1280 px |
-| `faces.py` | YuNet + greedy IoU tracker + landmark-aligned SFace embeddings |
+| `faces.py` | YuNet + greedy IoU tracker + landmark-aligned SFace embeddings; `find_face` in a user box; `has_face` privacy check |
+| `voice.py` | Voice teach: WAV → Whisper large-v3-turbo (onnx-asr, GPU) in the app's language → label; silence/length checks; nothing stored |
+| `cert.py` | Local HTTPS certificate for `--host 0.0.0.0` (CA limited to its own names, path length 0) |
 | `follow.py` | `FollowTrack`: VitTrack from a user box; replaces an overlapping detector box (IoU ≥ 0.5); ends after 8 unsure frames |
 | `encoders.py` | Encoder registry, one interface (`embed`, `dim`): `clip-b32`, `unicom-b16` (fastembed ONNX), `siglip2-base`, `dinov2-base`, `dinov2-large` (transformers, fp16 CUDA) |
-| `server.py` | FastAPI: `/ws` frames (one active camera), `/api/{hold,teach,burst,still,region,follow,unfollow,memory,rename,forget,forget_example,wipe,status}`, `/api/eval*`, `/api/reports/*.md`, `/api/assist*`, thumbnails; app shell served `no-cache` with content-hashed asset URLs |
+| `server.py` | FastAPI: `/ws` frames (one active camera), `/api/{hold,teach,burst,still,region,follow,unfollow,memory,rename,forget,forget_example,refresh_variants,wipe,status,voice}`, `/api/eval*`, `/api/reports/*.md`, `/api/assist*`, thumbnails; Host/Origin guard (N8), input limits (N9); app shell served `no-cache` with content-hashed asset URLs |
 | `evalset.py` | The test set: `data/eval/<task>/<id>.{jpg,json}`, never used for recognition |
 | `evaluation.py` | Pure-array evaluation: outcomes (correct / wrong / uncertain / missed / rejected / false accept), recommended bands (zero dangerous errors), separation, augmentation and views-needed ablations, logistic-regression baseline, Markdown report |
 | `assist.py` | Optional Claude help (off unless `ASSIST=on`): objects only, face check, small JPEGs, usage log |
-| `web/` | Phone PWA (vanilla JS): landing page, live overlay, tap/cycle selection, photo pause with draw/resize, TEACH sheet with label chooser, Video burst, Memory with variants, EN/EL, front/back camera, 3-2-1, diagnostics |
+| `web/` | Phone PWA (vanilla JS): landing page (Memory & evaluation without camera, pictures/video files), live overlay, active box (move/resize/✕), pinch zoom, runner-up labels, photo pause, TEACH sheet with label chooser and 🎤, Video until Stop, Label all, 🧪 test set, Memory with variants, optional Claude help, EN/EL, front/back camera, offline message, diagnostics |
 
 **Encoder step-up (2026-10-15)** — `tools/bench_encoders.py` on two small local multi-view sets (author's phone thumbnails: 13 images / 3 labels; course objects: 16 / 6):
 
