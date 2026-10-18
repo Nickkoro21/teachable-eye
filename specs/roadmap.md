@@ -103,6 +103,18 @@ regression tests (N8-N11, R53). 81 tests passing.
    detection/tracking spike on the first phone clips).
 
 ## Backlog / ideas (research before scheduling)
+- **From the course repo (re-checked 2026-10-18; upstream unchanged since the clone)** — compared
+  with teachable-eye by a review sub-agent. Worth taking soon (Apache-2.0, attribute):
+  trim leading/trailing silence before Whisper (`robot/device/mic.py` `trim_to_speech`: faster,
+  fewer phantom words); a one-tap "yes, it is X" on an `uncertain` guess, re-checked before writing
+  (`robot/brain/core.py` `confirm`); the calibration caveat of `testdata/verify_scores.py` (separate
+  photos give a *floor*: live scenes score closer, so start at the top of the clean range and
+  calibrate with views taken through the live pipeline); a quiesced backup (close the shard, copy
+  `data/memory` + `data/crops`, reopen). Later: persistent "ignored" clutter as hard negatives and
+  logged `seen` sightings with a `ts` index (Phase 2-3), headless replay of a folder/video for
+  metrics (Phase 2), `optimize()` after bulk writes once memories reach ~10k points (measure),
+  hotspot + offline model cache + clock sync for the airfield demo (Phase 6), Cloud sync with
+  partial snapshots and systemd/camera watchdog on Jetson (Phase 7).
 - **Face liveness (live person vs photo/screen)** — research done (research/05-face-liveness.md):
   MiniFASNet ONNX (Apache-2.0) plus a nose-parallax test from YuNet's 5 points; a spike with
   recorded live / print / screen / replay clips and APCER/BPCER before any UI; advice only, never a
