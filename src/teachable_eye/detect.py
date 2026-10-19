@@ -87,6 +87,9 @@ class Track:
         self.crop = None
         self.crop_q = 0.0
         self.salience = 0.0
+        # faces only (R57): too small for any identity / for a sure one
+        self.far = False
+        self.weak = False
 
     @property
     def stable(self):

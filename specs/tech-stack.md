@@ -1,6 +1,6 @@
 # Tech Stack
 
-> Status: **v1.4** (2026-10-18: As built updated — voice, augmentation profiles, hardening; v1.3: evaluation, Claude help) — choices marked *(decide by measurement)* are settled by a benchmark inside a feature, not up front.
+> Status: **v1.5** (2026-10-19: faces from further away, R57; v1.4: As built updated — voice, augmentation profiles, hardening; v1.3: evaluation, Claude help) — choices marked *(decide by measurement)* are settled by a benchmark inside a feature, not up front.
 
 ## Core
 
@@ -39,7 +39,7 @@ Excluded: InsightFace/ArcFace pretrained weights (non-commercial licence).
 | `vote.py` | Per-track majority vote over the last 3 recognitions (no flicker) |
 | `tasks.py` | `VisualTask` shared by objects and people: live processing, hold (freeze TEACH selection), video teach (until Stop, 15 most different views), photo mode with per-photo ids, user regions (people: snapped to a face), follow, augmentation profiles + Update variants, test set + evaluation, complete forgetting, thumbnail GC; `ObjectsTask`, `PeopleTask` |
 | `detect.py` | YOLOE + BoT-SORT, stability gate (3 frames), masked padded crops, re-query every 2 s; photos at 1280 px |
-| `faces.py` | YuNet + greedy IoU tracker + landmark-aligned SFace embeddings; `find_face` in a user box; `has_face` privacy check |
+| `faces.py` | YuNet on the frame as received (≤ 1280 px) + greedy IoU tracker + landmark-aligned SFace embeddings; size-aware floor (0.80 / 0.60), identity bands by face size (`far` no name, `weak` uncertain at most); `find_face` in a user box (640 px); `has_face` privacy check (floor 0.5, no size floor) |
 | `voice.py` | Voice teach: WAV → Whisper large-v3-turbo (onnx-asr, GPU) in the app's language → label; silence/length checks; nothing stored |
 | `cert.py` | Local HTTPS certificate for `--host 0.0.0.0` (CA limited to its own names, path length 0) |
 | `follow.py` | `FollowTrack`: VitTrack from a user box; replaces an overlapping detector box (IoU ≥ 0.5); ends after 8 unsure frames |
@@ -62,10 +62,50 @@ Excluded: InsightFace/ArcFace pretrained weights (non-commercial licence).
 
 Only DINOv2 fully separates same-object from different-object pairs on the phone set. Live cost: ~63 ms per 960 px frame (vs ~55 ms with CLIP). Sets are small: indicative, to be confirmed by the evaluation tool on new phone data. Each encoder has its **own memory** (`data/memory/objects-<encoder>`; `clip-b32` keeps `data/memory/objects`) and its own **provisional** bands (`config.DEFAULT_OBJECT_BANDS`; dinov2-large 0.45/0.10). Taught **crops (384 px) are now kept** in `data/crops/` so `tools/reembed.py --from A --to B` rebuilds a memory for another encoder; the existing 13 views were migrated from their 160 px thumbnails. Thumbnail/crop clean-up checks every encoder's memory before deleting a shared file.
 
+**Faces from further away (2026-10-19, R57)** — measured on this PC (i7-10700, OpenCV 5.0.0 DNN on
+CPU, 16 threads) with synthetic frames and the author's 89 aligned face crops read locally (nothing
+copied). *Composites, not faces at known distances: H16 confirms on the phone.*
+
+| YuNet input | median | p95 |
+|---|---|---|
+| 640×360 (before: every live frame) | 11 ms | 20 ms |
+| **960×540 (now: the live frame as received)** | **26 ms** | 30 ms |
+| 1280×720 (photos; optional live `?side=1280`) | 49 ms | 55 ms |
+| 1920×1080 (not used) | 150 ms | 184 ms |
+
+SFace: 7 ms per face. The full people frame at 960 px stays under the M2 budget (median ≤ 60 ms).
+
+| face crop pasted at | box YuNet sees | found ≥ 0.80 / ≥ 0.60 at **960** | at 640 (before) |
+|---|---|---|---|
+| 56 px | ~41 px | 90 % / 95 % | 75 % / 90 % |
+| 40 px | ~28 px | 75 % / 95 % | 45 % / 70 % |
+| 32 px | ~23 px | 65 % / 80 % | 25 % / 55 % |
+| 24 px | ~16 px | 35 % / 60 % | 0 % / 30 % |
+| 16 px | ~10 px | 0 % / 15 % | — |
+
+So detecting on the received frame and the 0.60 floor for small faces together take a ~28 px face
+from "found 45 % of frames" to 95 %; the 3-frame stability gate absorbs the flicker. 100 face-free
+synthetic frames gave 0 boxes at 0.60 (weak evidence for false positives: real scenes are H16's job).
+
+SFace identity vs. face size (the 112 px aligned crop shrunk to *s* px and blown back up, cosine to its
+own full-size vector; p10 over 89 crops): 64 px 0.95 · 56 px 0.94 · 48 px 0.90 · 40 px 0.85 · 32 px
+0.78 · 24 px 0.64 · 16 px 0.40. The crop is ~1.4× the YuNet box, so a **40 px box ≈ 56 px crop ≈ 0.94**
+and a **56 px box ≈ 78 px crop ≈ 0.96**: hence `NAME_PX=40` (no name below) and `SURE_PX=56`
+(`uncertain` at most below), chosen with room for the blur and JPEG of real far faces. Cross-crop
+cosine at full size: median 0.25, p90 0.75 (same and different people mixed; labels were not read).
+*Estimated* reach at 960 px with the phone's main camera (~14 px/degree; a 14 cm face box subtends
+≈ 8°·m / distance, so ≈ 112 px·m / distance): a sure name to ~2 m, a guess to ~2.8 m, a "far" box to
+~5-6 m; at 1280 px about 1/3 further. To be replaced by H16's numbers.
+
 **Key parameters** (`.env`, defaults in `.env.example`): `OBJECT_ENCODER=dinov2-large`, objects bands per encoder,
 `PEOPLE_THRESHOLD=0.40`, `PEOPLE_MARGIN=0.06`, `DETECT_CONF=0.30`, `DETECT_MIN_AREA=0.0003`,
 `DETECT_MAX_AREA=0.90`, `AUGMENT=on`, `ENCODER_DEVICE=auto`. Boxes touching two frame edges are
 flagged `background`. Bursts keep up to 10 views in 5 s, a view only if cosine < 0.95 to all kept views.
+Face constants live in `faces.py` (not env-tunable, each with its reason): `DETECT_SIDE=1280`
+(live 960 px frames are used as received), `SCORE=0.80` / `SCORE_FAR=0.60` (YuNet floor for faces
+≥ / < `SURE_PX`), `MIN_FACE_PX=16`, `NAME_PX=40` (below: "far", no name, not teachable),
+`SURE_PX=56` (below: `uncertain` at most), `REGION_SIDE=640` (user-drawn boxes, R48),
+`GUARD_SCORE=0.5` (`has_face`). Sizes are the face box's shorter side in received pixels.
 
 **Teach-time augmentation**: each taught view also stores hidden-by-default variants (objects: centre
 zoom 70 %, mirror, darker; people: mirror, darker — faces are never cropped). Variants carry `parent`

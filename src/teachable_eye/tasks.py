@@ -2,8 +2,10 @@
 
 A task turns a camera frame into results the page can draw:
     {"id": track id, "box": [x1, y1, x2, y2] in 0..1, "focus": bool,
-     "background": bool, **Decision.to_json()}
+     "background": bool, "far": bool, **Decision.to_json()}
 and stores examples when the user teaches. Each task owns one TaskMemory.
+A `far` row is a face too small for any identity (R57): its decision stays
+`pending`, it cannot be taught; a face a little bigger is `uncertain` at most.
 
 `VisualTask` holds everything the tasks share (vote, hold, photo mode,
 teach-from-video bursts, thumbnails). A concrete task only chooses its
@@ -13,7 +15,8 @@ detector/tracker, its encoder and its memory:
     people   YuNet + IoU track -> aligned face  -> SFace (128-d)
 
 A tracker must offer: tracks (dict id -> detect.Track), process(frame, now),
-detect_once(frame) -> [(norm box, crop)], reset().
+detect_once(frame) -> [(norm box, crop)] (faces: a third item, {"far", "weak"},
+and crop None when far), reset().
 """
 import threading
 import time
@@ -25,7 +28,20 @@ import numpy as np
 from teachable_eye import config
 from teachable_eye.labels import norm_label
 from teachable_eye.memory import TaskMemory
+from teachable_eye.policy import at_most_uncertain
 from teachable_eye.vote import LabelVote
+
+# what a row says before (or instead of) a decision
+PENDING = {"decision": "pending", "label": None, "guess": None,
+           "score": 0.0, "neighbours": []}
+TOO_FAR = "too far to teach; come closer"
+
+
+def _found(item):
+    """(box, crop, far, weak) from one detect_once item (objects: no flags)."""
+    box, crop = item[0], item[1]
+    flags = item[2] if len(item) > 2 else {}
+    return box, crop, bool(flags.get("far")), bool(flags.get("weak"))
 
 THUMB_SIZE = 160
 CROP_SIZE = 384      # kept per taught view, so memory can be re-embedded
@@ -340,8 +356,12 @@ class VisualTask:
                           if all(iou(t.box, fb) < DUPLICATE_IOU for fb in followed)]
                 tracks += list(self._follow.values())
             bursting = {b.tid: b for b in self._bursts.values() if not b.done}
+            for t in tracks:
+                if t.far:          # a face too small for a name: forget what
+                    self._votes.pop(t.tid, None)   # it was called when nearer
+                    self._shown.pop(t.tid, None)
             # one batched embedding call: due recognitions + burst views
-            due = [t for t in tracks if t.crop is not None
+            due = [t for t in tracks if t.crop is not None and not t.far
                    and (t.tid in bursting or t.due_for_query(now))]
             if due:
                 vectors = self.embed([t.crop for t in due])
@@ -358,16 +378,16 @@ class VisualTask:
                 for tid in [k for k in store if self._track(k) is None]:
                     del store[tid]
             boxes = {t.tid: t.norm_box() for t in tracks}
-            focus = pick_focus(boxes)
+            focus = pick_focus({t.tid: boxes[t.tid] for t in tracks if not t.far})
             out = []
             for t in tracks:
                 shown = self._shown.get(t.tid)
+                if shown is not None and t.weak:     # a name needs a bigger face
+                    shown = at_most_uncertain(shown)
                 row = {"id": t.tid, "box": boxes[t.tid], "focus": t.tid == focus,
                        "background": is_background(boxes[t.tid]),
-                       "manual": getattr(t, "manual", False)}
-                row.update(shown.to_json() if shown else
-                           {"decision": "pending", "label": None, "guess": None,
-                            "score": 0.0, "neighbours": []})
+                       "manual": getattr(t, "manual", False), "far": t.far}
+                row.update(shown.to_json() if shown else PENDING)
                 out.append(row)
             return out
 
@@ -395,8 +415,12 @@ class VisualTask:
             if from_still:
                 self._use_still(still_id)
                 crop = self._still_crops.get(tid)
+                if crop is None and tid in self._still_crops:
+                    raise LookupError(TOO_FAR)          # a far face (R57)
             else:
                 track = self._track(tid)
+                if track is not None and track.far:
+                    raise LookupError(TOO_FAR)
                 crop = track.crop if track is not None else None
                 if crop is None:
                     crop = self._crops.get(tid)
@@ -407,8 +431,11 @@ class VisualTask:
     def start_burst(self, tid, seconds=BURST_SECONDS):
         """Teach from video: start collecting views of track `tid`."""
         with self._lock:
-            if self._track(tid) is None:
+            track = self._track(tid)
+            if track is None:
                 raise LookupError("that object is no longer in view")
+            if track.far:
+                raise LookupError(TOO_FAR)
             bid = uuid.uuid4().hex
             seconds = min(max(1.0, float(seconds)), BURST_MAX_SECONDS)
             # forgotten recordings (the phone went away) must not pile up
@@ -743,20 +770,26 @@ class VisualTask:
         """Every detection in one photo with its decision (R14), no tracking."""
         with self._lock:
             self._still_frame = frame
-            found = self.detector.detect_once(frame)
-            self._still_crops = {i: crop for i, (_, crop) in enumerate(found)}
+            found = [_found(item) for item in self.detector.detect_once(frame)]
+            # a far face keeps its row but no crop: nothing to teach (R57)
+            self._still_crops = {i: crop for i, (_, crop, _, _) in enumerate(found)}
             sid = uuid.uuid4().hex
             self._stills[sid] = (self._still_frame, self._still_crops)
             while len(self._stills) > MAX_STILLS:
                 self._stills.pop(next(iter(self._stills)))
             self.last_still_id = sid
-            if not found:
-                return []
-            vectors = self.embed([crop for _, crop in found])
-            return [dict({"id": i, "box": box, "focus": False,
-                          "background": is_background(box)},
-                         **self.memory.recognize(vec).to_json())
-                    for i, ((box, _), vec) in enumerate(zip(found, vectors))]
+            near = [i for i, (_, crop, far, _) in enumerate(found) if not far]
+            vectors = self.embed([found[i][1] for i in near]) if near else []
+            decided = {i: self.memory.recognize(v) for i, v in zip(near, vectors)}
+            out = []
+            for i, (box, _, far, weak) in enumerate(found):
+                d = decided.get(i)
+                if d is not None and weak:
+                    d = at_most_uncertain(d)
+                out.append(dict({"id": i, "box": box, "focus": False,
+                                 "background": is_background(box), "far": far},
+                                **(d.to_json() if d else PENDING)))
+            return out
 
     # -- thumbnails --------------------------------------------------------------
 
@@ -872,7 +905,7 @@ class PeopleTask(VisualTask):
     supports_regions = True
 
     def region(self, box, still_id=None):
-        from teachable_eye.faces import find_face
+        from teachable_eye.faces import find_face, identity_band
         with self._lock:
             self._use_still(still_id)
             if self._still_frame is None:
@@ -884,11 +917,19 @@ class PeopleTask(VisualTask):
             if len(self._still_crops) >= MAX_STILL_CROPS:
                 raise LookupError("too many boxes on this photo; take a new one")
             rid = 1000 + len(self._still_crops)
+            # the same size rule as the live detector (R57): the user may say
+            # "there is a face", not "I know who it is"
+            h, w = self._still_frame.shape[:2]
+            band = identity_band(min((face_box[2] - face_box[0]) * w,
+                                     (face_box[3] - face_box[1]) * h))
+            row = {"id": rid, "box": face_box, "focus": False,
+                   "background": False, "manual": True, "far": band == "far"}
+            if band == "far":
+                self._still_crops[rid] = None
+                return dict(row, **PENDING)
             self._still_crops[rid] = aligned
-            vec = self.embed([aligned])[0]
-            return dict({"id": rid, "box": face_box, "focus": False,
-                         "background": False, "manual": True},
-                        **self.memory.recognize(vec).to_json())
+            d = self.memory.recognize(self.embed([aligned])[0])
+            return dict(row, **(at_most_uncertain(d) if band == "weak" else d).to_json())
 
     def follow(self, box, still_id=None):
         raise LookupError("faces are followed by the face detector itself")

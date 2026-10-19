@@ -55,6 +55,7 @@ const I18N = {
     profilesTitle: "Augmentation profiles (same test set)",
     liveTapHint: "Nothing there. Take a Photo to mark your own box.",
     known: "known", uncertain: "uncertain", unknown: "unknown", pending: "looking…",
+    tooFar: "face — too far", tooFarTeach: "Too far to teach: come closer.",
     maybe: "maybe", views: "views", rename: "Rename", forget: "Forget",
     renamePrompt: "New name for “{0}”", forgetConfirm: "Forget “{0}” ({1} views)?",
     forgetEveryone: "Forget everyone", wipeConfirm: "Delete ALL people from this device?",
@@ -140,6 +141,7 @@ const I18N = {
     profilesTitle: "Προφίλ augmentation (ίδιο σύνολο δοκιμής)",
     liveTapHint: "Δεν υπάρχει κάτι εκεί. Πάτα Φωτό για να σημειώσεις δικό σου πλαίσιο.",
     known: "γνωστό", uncertain: "αβέβαιο", unknown: "άγνωστο", pending: "κοιτάζω…",
+    tooFar: "πρόσωπο — μακριά", tooFarTeach: "Πολύ μακριά για να το μάθω: πλησίασε.",
     maybe: "ίσως", views: "όψεις", rename: "Μετονομασία", forget: "Ξέχνα",
     renamePrompt: "Νέο όνομα για «{0}»", forgetConfirm: "Να ξεχάσω το «{0}» ({1} όψεις);",
     forgetEveryone: "Ξέχνα όλα τα πρόσωπα", wipeConfirm: "Διαγραφή ΟΛΩΝ των προσώπων από τη συσκευή;",
@@ -177,7 +179,19 @@ const I18N = {
   },
 };
 
-const MAX_SIDE = 960;          // live frames sent to the PC
+// Live frames sent to the PC: 960 px long side by default. The PC detects
+// faces on the frame as received (R57), so this is the whole pixel budget
+// for far faces; 1280 reaches ~1/3 further at ~1.8x the bytes and PC time
+// (an option, not the default: open the page once with ?side=1280 to keep
+// it on this phone, ?side=960 to go back).
+const MAX_SIDE = liveSide();
+function liveSide() {
+  try {
+    const asked = new URLSearchParams(location.search).get("side");
+    if (asked === "960" || asked === "1280") localStorage.setItem("teye.side", asked);
+    return localStorage.getItem("teye.side") === "1280" ? 1280 : 960;
+  } catch { return 960; }
+}
 const STILL_SIDE = 1920;       // photo mode
 const MIN_INTERVAL_MS = 150;   // ~6 fps ceiling
 const VIDEO_MAX_SECONDS = 60;   // video teach runs until Stop; this is only a safety cap
@@ -263,6 +277,13 @@ function toast(msg, ms = 2800) {
 
 function escapeHtml(s) {
   return String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+// A refused TEACH / Video / 🎤 hold: the PC's reason, translated where the
+// phone has words for it (a face too small to teach, R57).
+function teachError(err) {
+  const msg = err && err.message || String(err);
+  return msg.includes("too far") ? t("tooFarTeach") : msg;
 }
 
 async function api(path, body, method = "POST") {
@@ -501,6 +522,7 @@ function toFrame(px, py) {
 function caption(r) {
   if (r.tested) return `🧪 ${r.label}`;
   if (r.taught) return `✓ ${r.label}`;
+  if (r.far) return t("tooFar");          // a face too small for a name (R57)
   if (r.decision === "known") return `${r.label} · ${r.score.toFixed(2)}`;
   if (r.decision === "uncertain") return `${t("maybe")} ${r.guess}? · ${r.score.toFixed(2)}`;
   if (r.decision === "pending") return t("pending");
@@ -570,6 +592,10 @@ function draw() {
     } else if (r.background) {                 // table, wall: visible but thin
       ctx.strokeStyle = "#ffffff66"; ctx.lineWidth = 1; ctx.setLineDash([5, 5]);
       ctx.strokeRect(x, y, w, h); ctx.setLineDash([]);
+    } else if (r.far) {                        // a face, no name possible: no "?"
+      ctx.strokeStyle = COLORS.unknown; ctx.lineWidth = 1.5; ctx.setLineDash([5, 5]);
+      ctx.strokeRect(x, y, w, h); ctx.setLineDash([]);
+      chip(caption(r), x, y, COLORS.unknown, topLimit, cw);
     } else {                                   // unnamed object: clear, tappable
       ctx.strokeStyle = "#ffffffcc"; ctx.lineWidth = 2;
       ctx.setLineDash(r.decision === "pending" ? [6, 5] : []);
@@ -849,7 +875,7 @@ async function teachSelected() {
   try {
     const res = await api("/api/hold", { task: state.task, id: r.id, still: !!state.still, still_id: stillId() });
     openNameSheet(res.hold, preview ? [preview] : [], r);
-  } catch (err) { toast(err.message, 4000); }
+  } catch (err) { toast(teachError(err), 4000); }
   finally { state.holding = false; }
 }
 
@@ -870,7 +896,7 @@ async function startBurst() {
   state.burstStarting = true;
   try {
     res = await api("/api/burst", { task: state.task, id: r.id, seconds: VIDEO_MAX_SECONDS });
-  } catch (err) { toast(err.message, 4000); return; }
+  } catch (err) { toast(teachError(err), 4000); return; }
   finally { state.burstStarting = false; }
   if (epoch !== state.epoch || !state.running) return;   // left meanwhile; it expires
   state.burstFails = 0;
@@ -1039,7 +1065,7 @@ async function submitTeach(ev) {
 async function openMulti() {
   if (!state.still || state.burst || state.multi) return;
   const epoch = state.epoch;
-  const rows = [...state.still.rows].sort((a, b) =>
+  const rows = state.still.rows.filter((r) => !r.far).sort((a, b) =>   // far faces: nothing to teach
     (a.background - b.background) || (a.box[0] - b.box[0]));
   if (!rows.length) { toast(t("noBoxes")); return; }
   let labels = [];
@@ -1299,7 +1325,7 @@ async function sayStart() {
   say.target = r;
   say.preview = cropPreview(r.box);
   say.hold = api("/api/hold", { task: state.task, id: r.id, still: !!state.still, still_id: stillId() })
-    .then((res) => res.hold).catch((err) => { toast(err.message, 4000); return null; });
+    .then((res) => res.hold).catch((err) => { toast(teachError(err), 4000); return null; });
   return micStart();
 }
 

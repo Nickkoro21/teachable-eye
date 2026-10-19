@@ -32,6 +32,7 @@ Every item is scored **pass/fail**. The feature is done when all automated check
 | A24 | Silence around a sentence is cut before Whisper; the model gets only the speech | R54 |
 | A25 | One-tap confirm teaches only a guess still shown (live) or still nearest (photo); a moved guess saves nothing (409) | R55 |
 | A26 | The recommended threshold is at least the worst dangerous score + 0.02, and the report carries the "floor" caveat | R56 |
+| A27 | Size-aware floor: a 0.70-score small face is kept, a 0.70-score large one dropped, a 12 px one dropped; identity bands at 40/56 px; a 960 px frame is detected as received, a 1920 px photo at 1280 px with boxes and landmarks mapped back to photo pixels; a far track has no crop, its row is `far` + `pending`, hold/Video/confirm refuse it; a weak track shows a `known` match as `uncertain`; walking away forgets the name; far photo rows and far drawn boxes cannot be taught; `has_face` has no size floor, a floor ≤ the live one and at least the live resolution | R57 |
 | A16 | Second opinion returns only a candidate label (never an invented one), never sends a face; questions and summaries send no pictures and no per-view rows | R38-R40 |
 
 ## Level 2: Measured (recorded in the PR description)
@@ -64,6 +65,7 @@ Every item is scored **pass/fail**. The feature is done when all automated check
 | H13 | Two objects on screen, none tapped: TEACH asks to choose; tap one, drag it, drag a corner, ✕ the other; pinch-zoom a photo and box a small part (e.g. a button) | Only the active box is taught; the moved/resized box is the one taught; the dropped box does not come back; zoomed boxes line up with the picture |
 | H14 | PC: 🗂 Memory & evaluation while the phone streams; 🖼 a few phone pictures and a short video: box, teach, Next, Use this frame; People: draw a box round a small or turned face | The phone keeps its camera; pictures and frames can be labelled like photos; the drawn face box snaps to the face (or says none was found) |
 | H15 | Video teach of a face turning slowly for ~10 s; tap the label of an uncertain box | ~15 views spread over the whole turn; the panel lists the next labels with scores and the gap |
+| H16 | People mode, a taught (consenting) person stands at **2, 4, 6 and 8 m**, phone held still, daylight; repeat once with `?side=1280`. Note at each distance: box yes/no, what the chip says, and any box on something that is not a face. *Expected (estimate, ~14 px/degree at 960 px on the main camera: face box ≈ 55 px at 2 m, 28 px at 4 m, 18 px at 6 m, 14 px at 8 m; at 1280 px ×1.33)* | 2 m: the name. 4 m: a box, "maybe X?" at most or "face — too far". 6 m: "face — too far" most of the time. 8 m: no box or a far box. **Never a name from 4 m on**; no non-face box that survives more than a moment; TEACH on a far box says "come closer". Write the four results next to the estimate; if a name appears at 4 m or beyond, raise `NAME_PX` / `SURE_PX` in `faces.py` |
 
 ## Sign-off
 - [ ] Level 1 all pass

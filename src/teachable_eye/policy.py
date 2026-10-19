@@ -47,6 +47,14 @@ class Decision:
         }
 
 
+def at_most_uncertain(d):
+    """The same evidence shown as a guess, never as a name: for a face too
+    small to be sure of (R57). Everything but a `known` passes unchanged."""
+    if d.decision != KNOWN:
+        return d
+    return Decision(UNCERTAIN, None, d.label, d.score, d.neighbours, d.candidates)
+
+
 def decide(neighbours, thresholds):
     """Apply the bands to neighbours sorted best-first."""
     if not neighbours:

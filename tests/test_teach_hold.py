@@ -237,7 +237,7 @@ def test_people_box_drawn_on_a_photo_snaps_to_a_face(tmp_path, monkeypatch):
     task = PeopleTask(detector=FakeDetector(), embed=fake_embed, memory=mem)
     with pytest.raises(LookupError, match="photo"):
         task.region([0.1, 0.1, 0.5, 0.5])
-    task.still(np.zeros((100, 100, 3), np.uint8))
+    task.still(np.zeros((400, 400, 3), np.uint8))   # the face below is 80 px: a sure size (R57)
     monkeypatch.setattr(faces, "find_face", lambda frame, box: None)
     with pytest.raises(LookupError, match="no face"):
         task.region([0.1, 0.1, 0.5, 0.5])

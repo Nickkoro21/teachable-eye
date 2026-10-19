@@ -31,10 +31,38 @@ SFACE = ("face_recognition_sface_2021dec.onnx",
          "0ba9fbfa01b5270c96627c4ef784da859931e02f04419c829e83484087c34e79")
 SFACE_DIM = 128
 
-SCORE = 0.80        # YuNet confidence floor
-MIN_FACE = 0.0008   # smallest face kept, as a fraction of the frame area
+# Sizes are the face box's shorter side in pixels of the frame as received
+# (live: 960 px long side from the phone). Numbers from composites of the
+# author's own aligned crops pasted into synthetic frames (2026-10-19,
+# R57); they are indicative until H16 confirms them on the phone.
+SCORE = 0.80        # YuNet floor for faces of SURE_PX or more (they score ~0.9)
+SCORE_FAR = 0.60    # floor for smaller faces: 28 px boxes went from 45 % to 75 %
+#                     found at 960 px; the 3-frame stability gate filters flicker
+MIN_FACE_PX = 16    # smallest box kept: below it YuNet mostly misses anyway
+NAME_PX = 40        # smallest box that may get a name: SFace still matches its
+#                     own full-size view at >= 0.90 (p10) here; smaller = "far"
+SURE_PX = 56        # smallest box that may be `known`; 40-56 px is `uncertain`
+#                     at most (self-match p10 0.90-0.95, and live frames add blur)
 IOU_MATCH = 0.3     # box overlap that continues a track
-DETECT_SIDE = 640   # faces are detected on a frame scaled to this long side
+DETECT_SIDE = 1280  # detection cap: live frames (960) are used as received, a
+#                     second downscale cost a far face 2/3 of its pixels; photos
+#                     (1920) are scaled once (49 ms vs 26 ms at 960, 150 at 1920)
+REGION_SIDE = 640   # a user-drawn box is scaled to this before find_face (R48)
+
+
+def identity_band(side_px):
+    """What a face this big may be called: `far` (no name), `weak`
+    (uncertain at most) or `ok` (the full policy)."""
+    if side_px < NAME_PX:
+        return "far"
+    if side_px < SURE_PX:
+        return "weak"
+    return "ok"
+
+
+def score_floor(side_px):
+    """YuNet confidence a face of this size must reach."""
+    return SCORE if side_px >= SURE_PX else SCORE_FAR
 
 
 def _model(spec):
@@ -74,18 +102,19 @@ def _iou(a, b):
 
 
 _guard = None
-GUARD_SCORE = 0.5   # lower than SCORE: when in doubt, it is a face
+GUARD_SCORE = 0.5   # lower than SCORE_FAR: when in doubt, it is a face
 
 
 def has_face(img):
     """True when `img` (BGR) shows a face. Used before any picture may leave
-    the device (assist.py): a crop with a face is never sent."""
+    the device (assist.py): a crop with a face is never sent. No size floor
+    at all: a face of a few pixels still counts."""
     h, w = img.shape[:2]
     if h < 10 or w < 10:
         return False
     scale = min(1.0, DETECT_SIDE / max(h, w))
     small = img if scale == 1.0 else cv2.resize(
-        img, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_AREA)
+        img, (round(w * scale), round(h * scale)), interpolation=cv2.INTER_AREA)
     # small crops: faces may fill them, upscale so YuNet can see them
     if max(small.shape[:2]) < 320:
         f = 320 / max(small.shape[:2])
@@ -121,7 +150,7 @@ def find_face(frame, nbox, pad=0.3):
     region = frame[Y1:Y2, X1:X2]
     if region.size == 0 or min(region.shape[:2]) < 8:
         return None
-    scale = DETECT_SIDE / max(region.shape[:2])
+    scale = REGION_SIDE / max(region.shape[:2])
     view = cv2.resize(region, None, fx=scale, fy=scale,
                       interpolation=cv2.INTER_AREA if scale < 1 else cv2.INTER_LINEAR)
     rows = _guard_detect(view)
@@ -143,9 +172,11 @@ def find_face(frame, nbox, pad=0.3):
 class FaceTracker:
     """Detect faces, follow them with greedy IoU matching, keep aligned crops."""
 
-    def __init__(self, score=SCORE):
+    def __init__(self, score=SCORE, score_far=SCORE_FAR):
+        # the model runs at the lower floor; _faces applies the size-aware one
         self.detector = cv2.FaceDetectorYN.create(
-            _model(YUNET), "", (320, 320), score, 0.3, 5000)
+            _model(YUNET), "", (320, 320), min(score, score_far), 0.3, 5000)
+        self.score, self.score_far = score, score_far
         _sface()                          # load (and download) up front
         self.tracks = {}
         self._next = 1
@@ -154,11 +185,15 @@ class FaceTracker:
         self.tracks.clear()
 
     def _faces(self, frame):
-        """[(pixel box, aligned crop, quality)] for one frame."""
+        """[(pixel box, aligned crop, quality, band)] for one frame.
+
+        `band` is identity_band() of the box; a `far` face has no aligned
+        crop (None): it gets no identity, so none is computed.
+        """
         h, w = frame.shape[:2]
         scale = min(1.0, DETECT_SIDE / max(h, w))
         small = frame if scale == 1.0 else cv2.resize(
-            frame, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_AREA)
+            frame, (round(w * scale), round(h * scale)), interpolation=cv2.INTER_AREA)
         self.detector.setInputSize((small.shape[1], small.shape[0]))
         _, faces = self.detector.detect(small)
         out = []
@@ -169,14 +204,19 @@ class FaceTracker:
             row = f.copy()
             row[:14] /= scale                    # back to full-frame pixels
             x, y, fw, fh = row[:4]
-            if fw * fh / (w * h) < MIN_FACE:
+            side = float(min(fw, fh))            # a turned head: the narrow side
+            floor = self.score if side >= SURE_PX else self.score_far
+            if side < MIN_FACE_PX or row[14] < floor:
                 continue
-            with _lock:
-                aligned = rec.alignCrop(frame, row)
+            band = identity_band(side)
+            aligned = None
+            if band != "far":
+                with _lock:
+                    aligned = rec.alignCrop(frame, row)
             # plain floats: numpy float32 is not JSON serialisable
             box = [float(max(0.0, x)), float(max(0.0, y)),
                    float(min(w, x + fw)), float(min(h, y + fh))]
-            out.append((box, aligned, float(row[14]) * (fw * fh) ** 0.5))
+            out.append((box, aligned, float(row[14]) * (fw * fh) ** 0.5, band))
         return out
 
     def process(self, frame, now=None):
@@ -184,7 +224,7 @@ class FaceTracker:
         h, w = frame.shape[:2]
         found = self._faces(frame)
         unmatched = set(self.tracks)
-        for box, aligned, quality in sorted(found, key=lambda f: -f[2]):
+        for box, aligned, quality, band in sorted(found, key=lambda f: -f[2]):
             best, best_iou = None, IOU_MATCH
             for tid in unmatched:
                 iou = _iou(self.tracks[tid].box, box)
@@ -201,7 +241,10 @@ class FaceTracker:
             t.last_seen = now
             t.box, t.frame_wh = box, (w, h)
             t.salience = quality
-            if quality >= t.crop_q or t.crop is None:
+            t.far, t.weak = band == "far", band == "weak"
+            if t.far:                     # nothing to teach or recognise from
+                t.crop, t.crop_q = None, 0.0
+            elif quality >= t.crop_q or t.crop is None:
                 t.crop, t.crop_q = aligned, quality
         for tid in list(unmatched):
             t = self.tracks[tid]
@@ -212,7 +255,9 @@ class FaceTracker:
         return [t for t in self.tracks.values() if t.stable]
 
     def detect_once(self, frame):
+        """[(normalised box, aligned crop or None, {"far", "weak"})]."""
         h, w = frame.shape[:2]
         return [([round(b[0] / w, 4), round(b[1] / h, 4),
-                  round(b[2] / w, 4), round(b[3] / h, 4)], aligned)
-                for b, aligned, _ in self._faces(frame)]
+                  round(b[2] / w, 4), round(b[3] / h, 4)], aligned,
+                 {"far": band == "far", "weak": band == "weak"})
+                for b, aligned, _, band in self._faces(frame)]
