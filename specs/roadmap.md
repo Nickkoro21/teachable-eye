@@ -88,22 +88,40 @@ applied to the author's memories (objects 286, people 623 variants). Liveness re
 (research/05). Deep review by three sub-agents (backend, phone, security): 32 findings, fixed with
 regression tests (N8-N11, R53). 81 tests passing.
 
-## Next steps (in order) — updated 2026-10-18
+## Next steps (in order) — updated 2026-10-19
 1. ~~**Three small ideas from the course repo**~~ — done 2026-10-18 (R54-R56): trim silence
    before Whisper; one-tap "yes, it is X" on an `uncertain` guess (re-checked before writing); the
    calibration caveat in the evaluation (a safety margin above the lowest safe threshold, and test
    views taken through the live pipeline). A memory backup is not needed yet (author, 2026-10-18).
-2. **Author:** when the models feel robust, collect the 🧪 test set (objects + people, plus
+2. ~~**Faces from further away**~~ — done 2026-10-19 (R57; review in research/06). **Author:** phone
+   check H16 (2/4/6/8 m, also with `?side=1280`). Then, from research/06: a phone-side face crop from
+   the 1080p stream (or 1280 px by default if H16 says so); scale-aware track matching for small
+   faces; sharpness/frontal-ness in the face crop quality, a "small face" variant, a shorter
+   `DEAD_SECONDS` for faces; keep the native-resolution face region so faces can be re-embedded.
+   After that, an optional **`FACE_MODELS=research`** set (SCRFD detector + ArcFace `buffalo_l`
+   identity, InsightFace weights: non-commercial research only — the author's use is research /
+   education, 2026-10-19; downloaded and hash-pinned, never in the repo, off by default, licence
+   stated in the README; YuNet + SFace stay the default) — switched on only if the people test set
+   shows a clear gain. Re-check the licence before any operational use at a flight school.
+3. **Author:** when the models feel robust, collect the 🧪 test set (objects + people, plus
    never-taught strangers) → Run evaluation → choose bands and augmentation profile by the numbers;
    record M3-M6. Phone checks H1-H15.
-3. Validation sign-off and merge of feature 01 into `main` (deep review by sub-agents done
+4. Validation sign-off and merge of feature 01 into `main` (deep review by sub-agents done
    2026-10-17), changelog.
-4. Feature 02 — parts and their state (inspection points: a clip, a switch, a button), then Phase 2
+5. Feature 02 — parts and their state (inspection points: a clip, a switch, a button), then Phase 2
    (aircraft video import, detection and tracking on the first phone clips). Liveness spike when the
    author records the clips (research/05).
-5. Detector licence review (AGPL) before any closed use.
+6. Detector licence review (AGPL) before any closed use.
 
 ## Backlog / ideas (research before scheduling)
+- **Sightings log ("when did you last see the hat?")** — asked by the author 2026-10-19, after the
+  course robot's episodic memory. A stable recognition writes an episode (label, first/last time,
+  best score, box, image vector, a small local snapshot under `data/`) to its own collection;
+  consecutive sightings merge into one episode. Questions by filter + time order (no text
+  embeddings needed): first / last time, how often; a 🕒 History screen and voice. On a video file
+  the times are offsets ("hat: 00:42-01:10") — the same shape as one approach = one episode in
+  Phase 2-3. Objects on by default; people opt-in with a retention limit. Later: notes on an
+  episode searched with a small multilingual text encoder.
 - **From the course repo (re-checked 2026-10-18; upstream unchanged since the clone)** — compared
   with teachable-eye by a review sub-agent. Worth taking soon (Apache-2.0, attribute):
   trim leading/trailing silence before Whisper (`robot/device/mic.py` `trim_to_speech`: faster,
